@@ -6,7 +6,7 @@ import { CartContext } from '../context/CartContext'
 
 const Navbar = ({ appName }) => {
   const { user, logout } = useContext(AuthContext)
-  const { totalItems } = useContext(CartContext)
+  const { itemCount } = useContext(CartContext)
 
   return (
     <nav className="navbar">
@@ -35,7 +35,7 @@ const Navbar = ({ appName }) => {
           {/* Cart */}
           <Link to="/cart" className="nav-action">
             <ShoppingCart size={24} />
-            {totalItems > 0 && <span className="cart-badge">{totalItems}</span>}
+            {itemCount > 0 && <span className="cart-badge">{itemCount}</span>}
           </Link>
 
           {/* User */}

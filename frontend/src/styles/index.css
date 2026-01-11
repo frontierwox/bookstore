@@ -50,6 +50,12 @@
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+
+  /* Colors for statuses */
+  --success-color: #27ae60;
+  --error-color: #e74c3c;
+  --info-color: #3498db;
+  --warning-color: #f39c12;
 }
 
 html {
