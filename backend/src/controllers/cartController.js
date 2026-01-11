@@ -88,7 +88,7 @@ exports.addToCart = asyncHandler(async (req, res) => {
 });
 
 // @desc    Update cart item quantity
-// @route   PUT /api/cart/item/:itemId
+// @route   PUT /api/cart/:productId or PUT /api/cart/item/:itemId
 // @access  Private
 exports.updateCartItem = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
@@ -104,7 +104,9 @@ exports.updateCartItem = asyncHandler(async (req, res) => {
     throw new AppError(404, 'Cart not found');
   }
 
-  const item = cart.items.id(req.params.itemId);
+  const identifier = req.params.productId || req.params.itemId;
+  const item = cart.items.id(identifier) || cart.items.find(i => i.product.toString() === identifier);
+
   if (!item) {
     throw new AppError(404, 'Item not found in cart');
   }
@@ -162,7 +164,7 @@ exports.updateCartItemDetails = asyncHandler(async (req, res) => {
 });
 
 // @desc    Remove item from cart
-// @route   DELETE /api/cart/item/:itemId
+// @route   DELETE /api/cart/:productId or DELETE /api/cart/item/:itemId
 // @access  Private
 exports.removeFromCart = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
@@ -176,7 +178,9 @@ exports.removeFromCart = asyncHandler(async (req, res) => {
     throw new AppError(404, 'Cart not found');
   }
 
-  const item = cart.items.id(req.params.itemId);
+  const identifier = req.params.productId || req.params.itemId;
+  const item = cart.items.id(identifier) || cart.items.find(i => i.product.toString() === identifier);
+
   if (!item) {
     throw new AppError(404, 'Item not found in cart');
   }

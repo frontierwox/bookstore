@@ -437,3 +437,79 @@ exports.getRecentActivities = asyncHandler(async (req, res) => {
     activities
   });
 });
+
+// Additional functions for admin routes compatibility
+
+// @desc    Create product (from productController)
+// @route   POST /api/admin/products
+// @access  Private (Admin)
+exports.createProduct = require('./productController').createProduct;
+
+// @desc    Update product (from productController)
+// @route   PUT /api/admin/products/:id
+// @access  Private (Admin)
+exports.updateProduct = require('./productController').updateProduct;
+
+// @desc    Delete product (from productController)
+// @route   DELETE /api/admin/products/:id
+// @access  Private (Admin)
+exports.deleteProduct = require('./productController').deleteProduct;
+
+// @desc    Bulk update stock
+// @route   PUT /api/admin/products/stock
+// @access  Private (Admin)
+exports.bulkUpdateStock = asyncHandler(async (req, res) => {
+  const updates = Array.isArray(req.body)
+    ? req.body
+    : (req.body.updates || req.body.items || req.body.products);
+
+  if (!Array.isArray(updates) || updates.length === 0) {
+    throw new AppError(400, 'Stock updates are required');
+  }
+
+  const operations = updates.map((u) => {
+    const productId = u.productId || u.id || u._id;
+    const stock = u.stock;
+
+    if (!productId) {
+      throw new AppError(400, 'Product ID is required for each stock update');
+    }
+
+    const numericStock = Number(stock);
+    if (!Number.isInteger(numericStock) || numericStock < 0) {
+      throw new AppError(400, 'Stock must be a non-negative integer');
+    }
+
+    return Product.updateOne({ _id: productId }, { $set: { stock: numericStock } });
+  });
+
+  await Promise.all(operations);
+
+  res.json({
+    success: true,
+    message: 'Stock updated successfully',
+    count: updates.length
+  });
+});
+
+// @desc    Upload product image
+// @route   POST /api/admin/products/upload
+// @access  Private (Admin)
+exports.uploadImage = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    throw new AppError(400, 'No file uploaded');
+  }
+
+  const filePath = req.file.path;
+
+  // In a real implementation, you would:
+  // 1. Upload to cloud storage (S3, Cloudinary, etc.)
+  // 2. Return the uploaded file URL
+  
+  res.json({
+    success: true,
+    message: 'Image uploaded successfully',
+    filePath,
+    filename: req.file.filename
+  });
+});
