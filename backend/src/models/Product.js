@@ -19,6 +19,18 @@ const productSchema = new mongoose.Schema({
     type: Number,
     default: null
   },
+  discountPercentage: {
+    type: Number,
+    default: 0,
+    min: [0, 'Discount percentage cannot be negative'],
+    max: [100, 'Discount percentage cannot exceed 100%']
+  },
+  discountStartDate: {
+    type: Date
+  },
+  discountEndDate: {
+    type: Date
+  },
   category: {
     type: String,
     required: [true, 'Category is required'],
@@ -80,7 +92,46 @@ const productSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Virtual for final price
+productSchema.virtual('finalPrice').get(function() {
+  if (this.discountPercentage > 0) {
+    const discountAmount = (this.price * this.discountPercentage) / 100;
+    return this.price - discountAmount;
+  }
+  return this.price;
+});
+
+// Method to check if discount is currently active
+productSchema.methods.isDiscountActive = function() {
+  if (this.discountPercentage <= 0) return false;
+  
+  const now = new Date();
+  
+  if (this.discountStartDate && now < this.discountStartDate) return false;
+  if (this.discountEndDate && now > this.discountEndDate) return false;
+  
+  return true;
+};
+
+// Method to get current final price
+productSchema.methods.getCurrentPrice = function() {
+  if (this.isDiscountActive()) {
+    return this.finalPrice;
+  }
+  return this.price;
+};
+
 // Index for search
 productSchema.index({ name: 'text', description: 'text', tags: 'text' });
+
+// Pre-save middleware to update discountedPrice when discount changes
+productSchema.pre('save', function(next) {
+  if (this.isDiscountActive()) {
+    this.discountedPrice = this.finalPrice;
+  } else {
+    this.discountedPrice = null;
+  }
+  next();
+});
 
 module.exports = mongoose.model('Product', productSchema);
