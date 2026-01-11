@@ -1,94 +1,124 @@
-const jwt = require('jsonwebtoken');
+const { verifyToken: verifyJWT } = require('../utils/jwt');
 const User = require('../models/User');
-const { errorMessages } = require('../utils/errorMessages');
 
-// Protect routes - verify JWT token
-const protect = async (req, res, next) => {
+// Verify JWT token middleware
+const verifyToken = async (req, res, next) => {
   try {
-    let token;
-
-    // Get token from header
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-      token = req.headers.authorization.split(' ')[1];
+    // Extract token from Authorization header (Bearer format)
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided',
+        status: 'error'
+      });
     }
 
-    // Check if token exists
+    const token = authHeader.split(' ')[1];
+
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: errorMessages.NOT_AUTHORIZED
+        message: 'No token provided',
+        status: 'error'
       });
     }
 
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Verify token using jwt utility
+    const decoded = verifyJWT(token);
 
-    // Get user from token
+    // Get user from database
     const user = await User.findById(decoded.id);
-
+    
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: errorMessages.USER_NOT_FOUND
+        message: 'User not found',
+        status: 'error'
       });
     }
 
-    // Attach user to request
+    // Attach user to req.user
     req.user = user;
+
+    // Call next() on success
     next();
   } catch (error) {
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({
-        success: false,
-        message: errorMessages.INVALID_TOKEN
-      });
-    }
+    // Handle expired token error
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
-        message: errorMessages.TOKEN_EXPIRED
+        message: 'Token has expired',
+        status: 'error'
       });
     }
-    next(error);
-  }
-};
 
-// Admin only - check if user is admin
-const adminOnly = async (req, res, next) => {
-  if (req.user && req.user.role === 'admin') {
-    next();
-  } else {
-    return res.status(403).json({
+    // Handle invalid token error
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token',
+        status: 'error'
+      });
+    }
+
+    // Handle other errors
+    return res.status(401).json({
       success: false,
-      message: errorMessages.ADMIN_ONLY
+      message: 'Authentication failed',
+      status: 'error'
     });
   }
 };
 
-// Optional auth - attach user if token exists, but don't require it
-const optionalAuth = async (req, res, next) => {
-  try {
-    let token;
+// Verify admin middleware
+const verifyAdmin = async (req, res, next) => {
+  // First verify token
+  await verifyToken(req, res, async (err) => {
+    if (err) return;
 
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-      token = req.headers.authorization.split(' ')[1];
-
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.id);
-
-      if (user) {
-        req.user = user;
-      }
+    // Check if user role is admin
+    if (req.user && req.user.role === 'admin') {
+      return next();
     }
-    next();
-  } catch (error) {
-    next();
-  }
+
+    // Return 403 if not admin
+    return res.status(403).json({
+      success: false,
+      message: 'Admin access required',
+      status: 'error'
+    });
+  });
 };
 
+// Verify customer middleware
+const verifyCustomer = async (req, res, next) => {
+  // First verify token
+  await verifyToken(req, res, async (err) => {
+    if (err) return;
+
+    // Check if user role is customer (or user)
+    if (req.user && (req.user.role === 'customer' || req.user.role === 'user')) {
+      return next();
+    }
+
+    // Return 403 if not customer
+    return res.status(403).json({
+      success: false,
+      message: 'Customer access required',
+      status: 'error'
+    });
+  });
+};
+
+// Export all three middleware functions
 module.exports = {
-  protect,
-  adminOnly,
-  optionalAuth,
-  auth: protect
+  verifyToken,
+  verifyAdmin,
+  verifyCustomer,
+  // Aliases for backward compatibility
+  protect: verifyToken,
+  auth: verifyToken,
+  adminOnly: verifyAdmin
 };

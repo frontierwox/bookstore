@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body, param, query } = require('express-validator');
 const productController = require('../controllers/productController');
-const auth = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 
 // Get all products with filtering and pagination
 router.get(

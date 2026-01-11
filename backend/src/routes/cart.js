@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body, param } = require('express-validator');
 const cartController = require('../controllers/cartController');
-const auth = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 
 // Get user's cart
 router.get('/', auth, cartController.getCart);
