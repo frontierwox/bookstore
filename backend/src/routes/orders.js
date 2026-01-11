@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body, param, query } = require('express-validator');
 const orderController = require('../controllers/orderController');
-const auth = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 
 // Create new order
 router.post(

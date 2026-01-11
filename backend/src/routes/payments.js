@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body, param } = require('express-validator');
 const paymentController = require('../controllers/paymentController');
-const auth = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 
 // Create Razorpay order
 router.post(

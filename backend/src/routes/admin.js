@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body, param, query } = require('express-validator');
 const adminController = require('../controllers/adminController');
-const auth = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 
 // Dashboard statistics
 router.get('/dashboard', auth, adminController.getDashboardStats);
