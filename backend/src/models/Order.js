@@ -6,6 +6,20 @@ const orderSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  customerEmail: {
+    type: String,
+    required: true,
+    validate: {
+      validator: function(v) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+      },
+      message: 'Invalid email format'
+    }
+  },
+  customerPhone: {
+    type: String,
+    required: true
+  },
   orderNumber: {
     type: String,
     unique: true,
@@ -88,6 +102,23 @@ const orderSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  discountDetails: {
+    totalDiscount: {
+      type: Number,
+      default: 0
+    },
+    appliedDiscounts: [{
+      productId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Product'
+      },
+      productName: String,
+      originalPrice: Number,
+      discountPercentage: Number,
+      discountAmount: Number,
+      finalPrice: Number
+    }]
+  },
   totalAmount: {
     type: Number,
     required: true
@@ -105,6 +136,23 @@ const orderSchema = new mongoose.Schema({
     },
     note: String
   }],
+  emailNotifications: {
+    confirmationSent: {
+      type: Boolean,
+      default: false
+    },
+    shippedSent: {
+      type: Boolean,
+      default: false
+    },
+    deliveredSent: {
+      type: Boolean,
+      default: false
+    },
+    confirmationSentAt: Date,
+    shippedSentAt: Date,
+    deliveredSentAt: Date
+  },
   estimatedDelivery: Date,
   deliveredAt: Date,
   notes: String

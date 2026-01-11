@@ -513,3 +513,429 @@ exports.uploadImage = asyncHandler(async (req, res) => {
     filename: req.file.filename
   });
 });
+
+// @desc    Get comprehensive analytics overview
+// @route   GET /api/admin/analytics/overview
+// @access  Private (Admin)
+exports.getAnalyticsOverview = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new AppError(400, errors.array()[0].msg);
+  }
+
+  const period = req.query.period || 'month';
+  let startDate = new Date();
+
+  switch (period) {
+    case 'today':
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'week':
+      startDate.setDate(startDate.getDate() - 7);
+      break;
+    case 'month':
+      startDate.setMonth(startDate.getMonth() - 1);
+      break;
+    case 'quarter':
+      startDate.setMonth(startDate.getMonth() - 3);
+      break;
+    case 'year':
+      startDate.setFullYear(startDate.getFullYear() - 1);
+      break;
+    case 'all':
+      startDate = new Date(0);
+      break;
+  }
+
+  // Current period analytics
+  const currentOrders = await Order.find({
+    createdAt: { $gte: startDate },
+    paymentStatus: 'completed'
+  });
+
+  // Previous period for comparison
+  const previousPeriodEnd = new Date(startDate);
+  let previousPeriodStart = new Date();
+  
+  switch (period) {
+    case 'today':
+      previousPeriodStart.setDate(previousPeriodStart.getDate() - 1);
+      break;
+    case 'week':
+      previousPeriodStart.setDate(previousPeriodStart.getDate() - 14);
+      break;
+    case 'month':
+      previousPeriodStart.setMonth(previousPeriodStart.getMonth() - 2);
+      break;
+    case 'quarter':
+      previousPeriodStart.setMonth(previousPeriodStart.getMonth() - 6);
+      break;
+    case 'year':
+      previousPeriodStart.setFullYear(previousPeriodStart.getFullYear() - 2);
+      break;
+    default:
+      previousPeriodStart.setMonth(previousPeriodStart.getMonth() - 1);
+  }
+
+  const previousOrders = await Order.find({
+    createdAt: { $gte: previousPeriodStart, $lt: previousPeriodEnd },
+    paymentStatus: 'completed'
+  });
+
+  // Calculate current period stats
+  const currentRevenue = currentOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+  const currentOrdersCount = currentOrders.length;
+  const currentAOV = currentOrdersCount > 0 ? currentRevenue / currentOrdersCount : 0;
+
+  // Calculate previous period stats
+  const previousRevenue = previousOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+  const previousOrdersCount = previousOrders.length;
+  const previousAOV = previousOrdersCount > 0 ? previousRevenue / previousOrdersCount : 0;
+
+  // Calculate growth percentages
+  const revenueGrowth = previousRevenue > 0 ? ((currentRevenue - previousRevenue) / previousRevenue) * 100 : 0;
+  const ordersGrowth = previousOrdersCount > 0 ? ((currentOrdersCount - previousOrdersCount) / previousOrdersCount) * 100 : 0;
+  const aovGrowth = previousAOV > 0 ? ((currentAOV - previousAOV) / previousAOV) * 100 : 0;
+
+  // Order status breakdown
+  const orderStatusBreakdown = await Order.aggregate([
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+
+  // Monthly sales data for chart
+  const monthlySales = await Order.aggregate([
+    {
+      $match: {
+        createdAt: { $gte: new Date(new Date().getFullYear(), 0, 1) },
+        paymentStatus: 'completed'
+      }
+    },
+    {
+      $group: {
+        _id: {
+          year: { $year: '$createdAt' },
+          month: { $month: '$createdAt' }
+        },
+        revenue: { $sum: '$totalAmount' },
+        orders: { $sum: 1 }
+      }
+    },
+    {
+      $sort: { '_id.month': 1 }
+    }
+  ]);
+
+  // Total users
+  const totalUsers = await User.countDocuments();
+  const newUsersInPeriod = await User.countDocuments({
+    createdAt: { $gte: startDate }
+  });
+
+  // Product analytics
+  const totalProducts = await Product.countDocuments();
+  const productsWithDiscounts = await Product.countDocuments({ discountPercentage: { $gt: 0 } });
+  const totalDiscountGiven = await Order.aggregate([
+    {
+      $match: {
+        createdAt: { $gte: startDate },
+        paymentStatus: 'completed'
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        totalDiscount: { $sum: '$discount' }
+      }
+    }
+  ]);
+
+  res.json({
+    success: true,
+    analytics: {
+      period,
+      overview: {
+        revenue: {
+          current: currentRevenue,
+          previous: previousRevenue,
+          growth: Math.round(revenueGrowth * 100) / 100
+        },
+        orders: {
+          current: currentOrdersCount,
+          previous: previousOrdersCount,
+          growth: Math.round(ordersGrowth * 100) / 100
+        },
+        averageOrderValue: {
+          current: Math.round(currentAOV * 100) / 100,
+          previous: Math.round(previousAOV * 100) / 100,
+          growth: Math.round(aovGrowth * 100) / 100
+        },
+        customers: {
+          total: totalUsers,
+          newInPeriod: newUsersInPeriod
+        },
+        products: {
+          total: totalProducts,
+          withDiscounts: productsWithDiscounts
+        },
+        discounts: {
+          totalGiven: totalDiscountGiven[0]?.totalDiscount || 0
+        }
+      },
+      orderStatusBreakdown,
+      monthlySales,
+      recentOrders: await Order.find()
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate('user', 'name email')
+    }
+  });
+});
+
+// @desc    Get top selling products
+// @route   GET /api/admin/analytics/top-products
+// @access  Private (Admin)
+exports.getTopSellingProducts = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new AppError(400, errors.array()[0].msg);
+  }
+
+  const limit = parseInt(req.query.limit) || 10;
+  const period = req.query.period || 'month';
+
+  let startDate = new Date();
+  switch (period) {
+    case 'today':
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'week':
+      startDate.setDate(startDate.getDate() - 7);
+      break;
+    case 'month':
+      startDate.setMonth(startDate.getMonth() - 1);
+      break;
+    case 'year':
+      startDate.setFullYear(startDate.getFullYear() - 1);
+      break;
+  }
+
+  const topProducts = await Order.aggregate([
+    {
+      $match: {
+        createdAt: { $gte: startDate },
+        paymentStatus: 'completed'
+      }
+    },
+    { $unwind: '$items' },
+    {
+      $group: {
+        _id: '$items.product',
+        totalSold: { $sum: '$items.quantity' },
+        revenue: { $sum: { $multiply: ['$items.price', '$items.quantity'] } },
+        orders: { $sum: 1 }
+      }
+    },
+    { $sort: { totalSold: -1 } },
+    { $limit: limit },
+    {
+      $lookup: {
+        from: 'products',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'product'
+      }
+    },
+    { $unwind: '$product' },
+    {
+      $project: {
+        name: '$product.name',
+        category: '$product.category',
+        price: '$product.price',
+        discountPercentage: '$product.discountPercentage',
+        stock: '$product.stock',
+        totalSold: 1,
+        revenue: 1,
+        orders: 1,
+        image: { $arrayElemAt: ['$product.images.url', 0] }
+      }
+    }
+  ]);
+
+  res.json({
+    success: true,
+    count: topProducts.length,
+    products: topProducts
+  });
+});
+
+// @desc    Update product discount
+// @route   PUT /api/admin/products/:id/discount
+// @access  Private (Admin)
+exports.updateProductDiscount = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new AppError(400, errors.array()[0].msg);
+  }
+
+  const { discountPercentage, discountStartDate, discountEndDate } = req.body;
+
+  const product = await Product.findById(req.params.id);
+
+  if (!product) {
+    throw new AppError(404, 'Product not found');
+  }
+
+  if (discountPercentage !== undefined) {
+    if (discountPercentage < 0 || discountPercentage > 100) {
+      throw new AppError(400, 'Discount percentage must be between 0 and 100');
+    }
+    product.discountPercentage = discountPercentage;
+  }
+
+  if (discountStartDate !== undefined) {
+    product.discountStartDate = discountStartDate ? new Date(discountStartDate) : null;
+  }
+
+  if (discountEndDate !== undefined) {
+    product.discountEndDate = discountEndDate ? new Date(discountEndDate) : null;
+  }
+
+  await product.save();
+
+  res.json({
+    success: true,
+    message: 'Product discount updated successfully',
+    product
+  });
+});
+
+// @desc    Get discount analytics
+// @route   GET /api/admin/analytics/discounts
+// @access  Private (Admin)
+exports.getDiscountAnalytics = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new AppError(400, errors.array()[0].msg);
+  }
+
+  const period = req.query.period || 'month';
+  let startDate = new Date();
+
+  switch (period) {
+    case 'today':
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'week':
+      startDate.setDate(startDate.getDate() - 7);
+      break;
+    case 'month':
+      startDate.setMonth(startDate.getMonth() - 1);
+      break;
+    case 'year':
+      startDate.setFullYear(startDate.getFullYear() - 1);
+      break;
+  }
+
+  // Total discount given
+  const discountStats = await Order.aggregate([
+    {
+      $match: {
+        createdAt: { $gte: startDate },
+        paymentStatus: 'completed'
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        totalDiscount: { $sum: '$discount' },
+        totalOrders: { $sum: 1 },
+        ordersWithDiscount: { $sum: { $cond: [{ $gt: ['$discount', 0] }, 1, 0] } }
+      }
+    }
+  ]);
+
+  // Discount by category
+  const discountByCategory = await Order.aggregate([
+    {
+      $match: {
+        createdAt: { $gte: startDate },
+        paymentStatus: 'completed',
+        discount: { $gt: 0 }
+      }
+    },
+    { $unwind: '$items' },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'items.product',
+        foreignField: '_id',
+        as: 'product'
+      }
+    },
+    { $unwind: '$product' },
+    {
+      $group: {
+        _id: '$product.category',
+        totalDiscount: { $sum: '$discount' },
+        orderCount: { $sum: 1 }
+      }
+    }
+  ]);
+
+  // Top discounted products
+  const topDiscountedProducts = await Order.aggregate([
+    {
+      $match: {
+        createdAt: { $gte: startDate },
+        paymentStatus: 'completed',
+        discount: { $gt: 0 }
+      }
+    },
+    { $unwind: '$discountDetails.appliedDiscounts' },
+    {
+      $group: {
+        _id: '$discountDetails.appliedDiscounts.productId',
+        totalDiscountAmount: { $sum: '$discountDetails.appliedDiscounts.discountAmount' },
+        productName: { $first: '$discountDetails.appliedDiscounts.productName' },
+        timesDiscounted: { $sum: 1 }
+      }
+    },
+    { $sort: { totalDiscountAmount: -1 } },
+    { $limit: 10 },
+    {
+      $lookup: {
+        from: 'products',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'product'
+      }
+    },
+    { $unwind: '$product' },
+    {
+      $project: {
+        name: '$product.name',
+        category: '$product.category',
+        totalDiscountAmount: 1,
+        timesDiscounted: 1
+      }
+    }
+  ]);
+
+  res.json({
+    success: true,
+    analytics: {
+      overall: discountStats[0] || {
+        totalDiscount: 0,
+        totalOrders: 0,
+        ordersWithDiscount: 0
+      },
+      byCategory: discountByCategory,
+      topDiscountedProducts
+    }
+  });
+});

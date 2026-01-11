@@ -52,10 +52,11 @@ const AdminDashboard = () => {
 
   const menuItems = [
     { path: '/admin', label: 'Dashboard', icon: MdDashboard },
-    { path: '/admin/products', label: 'Products', icon: MdShoppingBag },
+    { path: '/admin/products', label: 'Product Management', icon: MdShoppingBag },
+    { path: '/admin/analytics', label: 'Sales & Analytics', icon: MdAnalytics },
     { path: '/admin/orders', label: 'Orders', icon: MdAssignment },
     { path: '/admin/users', label: 'Users', icon: MdPeople },
-    { path: '/admin/analytics', label: 'Analytics', icon: MdAnalytics },
+    { path: '/admin/stock', label: 'Stock Control', icon: MdCategory },
     { path: '/admin/settings', label: 'Settings', icon: MdSettings }
   ]
 

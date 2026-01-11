@@ -21,6 +21,14 @@ import NotFound from './pages/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 
+// Admin components
+import AdminLayout from './admin/AdminLayout';
+import ProductManagementDashboard from './admin/ProductManagementDashboard';
+import SalesAnalyticsDashboard from './admin/SalesAnalyticsDashboard';
+import OrderManagement from './admin/OrderManagement';
+import StockControl from './admin/StockControl';
+import Analytics from './admin/Analytics';
+
 function App() {
   const appName = import.meta.env.VITE_APP_NAME || 'Saree Store';
 
@@ -86,14 +94,24 @@ function App() {
 
                     {/* Admin Routes */}
                     <Route path="/admin/login" element={<AdminLogin />} />
+                    
+                    {/* Admin protected routes with layout */}
                     <Route
                       path="/admin/*"
                       element={
                         <ProtectedRoute adminOnly>
-                          <AdminDashboard />
+                          <AdminLayout />
                         </ProtectedRoute>
                       }
-                    />
+                    >
+                      <Route index element={<AdminDashboard />} />
+                      <Route path="products" element={<ProductManagementDashboard />} />
+                      <Route path="analytics" element={<SalesAnalyticsDashboard />} />
+                      <Route path="orders" element={<OrderManagement />} />
+                      <Route path="users" element={<div className="coming-soon"><h2>User Management</h2><p>Coming soon...</p></div>} />
+                      <Route path="stock" element={<StockControl />} />
+                      <Route path="settings" element={<div className="coming-soon"><h2>Settings</h2><p>Coming soon...</p></div>} />
+                    </Route>
 
                     {/* 404 Route */}
                     <Route path="*" element={<NotFound />} />

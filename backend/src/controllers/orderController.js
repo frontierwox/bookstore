@@ -4,6 +4,7 @@ const Product = require('../models/Product');
 const { validationResult } = require('express-validator');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { SHIPPING, TAX_RATE } = require('../config/constants');
+const { sendOrderConfirmation, sendOrderShipped, sendOrderDelivered, sendAdminNotification } = require('../utils/emailService');
 
 // @desc    Create new order
 // @route   POST /api/orders
@@ -16,10 +17,36 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
   const { items, shippingAddress, paymentMethod } = req.body;
 
-  // Calculate subtotal
-  const subtotal = items.reduce((total, item) => {
-    return total + (item.price * item.quantity);
-  }, 0);
+  // Calculate subtotal and discounts
+  let subtotal = 0;
+  let totalDiscount = 0;
+  const appliedDiscounts = [];
+
+  for (const item of items) {
+    const product = await Product.findById(item.product);
+    if (!product) {
+      throw new AppError(404, `Product ${item.product} not found`);
+    }
+
+    const itemPrice = product.getCurrentPrice();
+    const originalPrice = product.price;
+    const discountAmount = originalPrice - itemPrice;
+    const discountPercentage = product.discountPercentage;
+
+    if (discountAmount > 0) {
+      totalDiscount += discountAmount * item.quantity;
+      appliedDiscounts.push({
+        productId: product._id,
+        productName: product.name,
+        originalPrice,
+        discountPercentage,
+        discountAmount: discountAmount * item.quantity,
+        finalPrice: itemPrice * item.quantity
+      });
+    }
+
+    subtotal += itemPrice * item.quantity;
+  }
 
   // Calculate shipping cost
   const shippingCost = subtotal >= SHIPPING.FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING.DEFAULT_COST;
@@ -33,12 +60,22 @@ exports.createOrder = asyncHandler(async (req, res) => {
   // Create order
   const order = await Order.create({
     user: req.user._id,
-    items,
+    customerEmail: req.user.email,
+    customerPhone: req.user.phone || shippingAddress.phone,
+    items: items.map(item => ({
+      ...item,
+      price: item.price // Keep original price for historical purposes
+    })),
     shippingAddress,
     paymentMethod,
     subtotal,
     shippingCost,
     tax,
+    discount: totalDiscount,
+    discountDetails: {
+      totalDiscount,
+      appliedDiscounts
+    },
     totalAmount,
     estimatedDelivery: new Date(Date.now() + SHIPPING.ESTIMATED_DELIVERY_DAYS * 24 * 60 * 60 * 1000)
   });
@@ -62,6 +99,25 @@ exports.createOrder = asyncHandler(async (req, res) => {
     note: 'Order placed'
   });
   await order.save();
+
+  // Send order confirmation email
+  try {
+    await sendOrderConfirmation(order);
+    order.emailNotifications.confirmationSent = true;
+    order.emailNotifications.confirmationSentAt = new Date();
+    await order.save();
+  } catch (emailError) {
+    console.error('Failed to send order confirmation email:', emailError);
+    // Don't fail the order creation if email fails
+  }
+
+  // Send admin notification
+  try {
+    await sendAdminNotification(order);
+  } catch (emailError) {
+    console.error('Failed to send admin notification:', emailError);
+    // Don't fail the order creation if admin email fails
+  }
 
   res.status(201).json({
     success: true,
@@ -229,6 +285,8 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     throw new AppError(404, 'Order not found');
   }
 
+  const oldStatus = order.status;
+
   // Update status
   order.status = status;
   order.statusHistory.push({
@@ -238,11 +296,29 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 
   // Set delivered date if status is delivered
   if (status === 'delivered') {
-    order.deliveredAt = Date.now();
+    order.deliveredAt = new Date();
     order.paymentStatus = 'completed';
   }
 
   await order.save();
+
+  // Send email notification based on status change
+  try {
+    if (status === 'shipped' && !order.emailNotifications.shippedSent) {
+      await sendOrderShipped(order);
+      order.emailNotifications.shippedSent = true;
+      order.emailNotifications.shippedSentAt = new Date();
+      await order.save();
+    } else if (status === 'delivered' && !order.emailNotifications.deliveredSent) {
+      await sendOrderDelivered(order);
+      order.emailNotifications.deliveredSent = true;
+      order.emailNotifications.deliveredSentAt = new Date();
+      await order.save();
+    }
+  } catch (emailError) {
+    console.error('Failed to send status update email:', emailError);
+    // Don't fail the status update if email fails
+  }
 
   res.json({
     success: true,
@@ -280,3 +356,56 @@ exports.addOrderNote = asyncHandler(async (req, res) => {
 
 // Alias for route compatibility
 exports.getOrders = exports.getUserOrders;
+
+// @desc    Resend order email notification (Admin)
+// @route   POST /api/orders/:id/resend-email
+// @access  Private (Admin)
+exports.resendOrderEmail = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new AppError(400, errors.array()[0].msg);
+  }
+
+  const { emailType } = req.body;
+
+  const order = await Order.findById(req.params.id).populate('user', 'name email');
+
+  if (!order) {
+    throw new AppError(404, 'Order not found');
+  }
+
+  let emailResult;
+
+  try {
+    switch (emailType) {
+      case 'confirmation':
+        emailResult = await sendOrderConfirmation(order);
+        order.emailNotifications.confirmationSent = true;
+        order.emailNotifications.confirmationSentAt = new Date();
+        break;
+      case 'shipped':
+        emailResult = await sendOrderShipped(order);
+        order.emailNotifications.shippedSent = true;
+        order.emailNotifications.shippedSentAt = new Date();
+        break;
+      case 'delivered':
+        emailResult = await sendOrderDelivered(order);
+        order.emailNotifications.deliveredSent = true;
+        order.emailNotifications.deliveredSentAt = new Date();
+        break;
+      default:
+        throw new AppError(400, 'Invalid email type');
+    }
+
+    await order.save();
+
+    res.json({
+      success: true,
+      message: `${emailType} email sent successfully`,
+      result: emailResult
+    });
+  } catch (emailError) {
+    console.error(`Failed to send ${emailType} email:`, emailError);
+    throw new AppError(500, `Failed to send ${emailType} email`);
+  }
+});

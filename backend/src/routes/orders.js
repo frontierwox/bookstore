@@ -5,7 +5,8 @@ const {
   getOrders, 
   getOrderById, 
   updateOrderStatus, 
-  cancelOrder 
+  cancelOrder,
+  resendOrderEmail
 } = require('../controllers/orderController');
 const { verifyToken, verifyAdmin } = require('../middleware/auth');
 const { validateOrderInput } = require('../middleware/validation');
@@ -18,5 +19,6 @@ router.post('/:id/cancel', verifyToken, cancelOrder);  // POST /api/orders/:id/c
 
 // Admin routes (protected + admin)
 router.put('/:id/status', verifyToken, verifyAdmin, updateOrderStatus);  // PUT /api/orders/:id/status
+router.post('/:id/resend-email', verifyToken, verifyAdmin, resendOrderEmail);  // POST /api/orders/:id/resend-email
 
 module.exports = router;
