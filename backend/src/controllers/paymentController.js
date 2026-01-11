@@ -230,7 +230,12 @@ exports.getPaymentStatus = asyncHandler(async (req, res) => {
     throw new AppError(400, errors.array()[0].msg);
   }
 
-  const payment = await Payment.findById(req.params.paymentId);
+  const orderId = req.params.orderId;
+  const paymentId = req.params.paymentId;
+
+  const payment = orderId
+    ? await Payment.findOne({ order: orderId })
+    : await Payment.findById(paymentId);
 
   if (!payment) {
     throw new AppError(404, 'Payment not found');
@@ -271,6 +276,47 @@ exports.getPaymentByOrder = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
+    payment
+  });
+});
+
+// Aliases for route compatibility
+exports.initiateRazorpayPayment = exports.createRazorpayOrder;
+exports.verifyRazorpayPayment = exports.verifyPayment;
+
+// @desc    Initiate Cash on Delivery payment
+// @route   POST /api/payments/cod
+// @access  Private
+exports.initiateCoD = asyncHandler(async (req, res) => {
+  const { orderId } = req.body;
+
+  if (!orderId) {
+    throw new AppError(400, 'Order ID is required');
+  }
+
+  const order = await Order.findById(orderId);
+  if (!order) {
+    throw new AppError(404, 'Order not found');
+  }
+
+  // Create payment record for COD
+  const payment = await Payment.create({
+    order: orderId,
+    user: req.user._id,
+    amount: order.totalAmount,
+    paymentMethod: 'cod',
+    paymentStatus: 'pending',
+    transactionId: `COD_${Date.now()}_${orderId}`
+  });
+
+  // Update order payment status
+  order.paymentStatus = 'pending';
+  order.status = 'confirmed';
+  await order.save();
+
+  res.json({
+    success: true,
+    message: 'Cash on Delivery order confirmed',
     payment
   });
 });

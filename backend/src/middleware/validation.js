@@ -55,33 +55,36 @@ const validatePassword = (req, res, next) => {
 
 // Validate product input
 const validateProductInput = (req, res, next) => {
-  const { name, price, description, sku, category } = req.body;
+  const { name, price, description, category, stock } = req.body;
   const errors = [];
 
-  // Check required fields
   if (!name) errors.push('Product name is required');
-  if (!price) errors.push('Product price is required');
+  if (price === undefined || price === null) errors.push('Product price is required');
   if (!description) errors.push('Product description is required');
-  if (!sku) errors.push('Product SKU is required');
   if (!category) errors.push('Product category is required');
 
-  // Validate price is number > 0
-  if (price && (typeof price !== 'number' || price <= 0)) {
+  const numericPrice = Number(price);
+  if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
     errors.push('Price must be a positive number');
   }
 
-  // Validate category is in allowed list
+  if (stock !== undefined) {
+    const numericStock = Number(stock);
+    if (!Number.isInteger(numericStock) || numericStock < 0) {
+      errors.push('Stock must be a non-negative integer');
+    }
+  }
+
   const allowedCategories = ['silk', 'cotton', 'chiffon', 'georgette', 'crepe', 'banarasi', 'kanchipuram', 'other'];
-  if (category && !allowedCategories.includes(category)) {
+  if (category && !allowedCategories.includes(String(category).toLowerCase())) {
     errors.push(`Category must be one of: ${allowedCategories.join(', ')}`);
   }
 
-  // Return array of errors if invalid
   if (errors.length > 0) {
     return res.status(400).json({
       success: false,
       message: 'Validation failed',
-      errors: errors,
+      errors,
       status: 'error'
     });
   }
@@ -91,33 +94,36 @@ const validateProductInput = (req, res, next) => {
 
 // Validate order input
 const validateOrderInput = (req, res, next) => {
-  const { items, customerDetails, totalAmount } = req.body;
+  const { items, shippingAddress, paymentMethod } = req.body;
   const errors = [];
 
-  // Check required fields
-  if (!items) {
-    errors.push('Order items are required');
-  }
-  
-  if (!customerDetails) {
-    errors.push('Customer details are required');
-  }
-  
-  if (!totalAmount) {
-    errors.push('Total amount is required');
-  }
-
-  // Validate items array not empty
-  if (items && (!Array.isArray(items) || items.length === 0)) {
+  if (!Array.isArray(items) || items.length === 0) {
     errors.push('Order must contain at least one item');
   }
 
-  // Return errors if invalid
+  if (!shippingAddress || typeof shippingAddress !== 'object') {
+    errors.push('Shipping address is required');
+  } else {
+    const requiredFields = ['name', 'phone', 'address', 'city', 'state', 'pincode'];
+    for (const field of requiredFields) {
+      if (!shippingAddress[field]) {
+        errors.push(`${field} is required in shipping address`);
+      }
+    }
+  }
+
+  const allowedPaymentMethods = ['cod', 'razorpay', 'card'];
+  if (!paymentMethod) {
+    errors.push('Payment method is required');
+  } else if (!allowedPaymentMethods.includes(paymentMethod)) {
+    errors.push('Invalid payment method');
+  }
+
   if (errors.length > 0) {
     return res.status(400).json({
       success: false,
       message: 'Validation failed',
-      errors: errors,
+      errors,
       status: 'error'
     });
   }

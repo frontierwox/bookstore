@@ -1,117 +1,53 @@
 const express = require('express');
 const router = express.Router();
-const { body, param, query } = require('express-validator');
-const adminController = require('../controllers/adminController');
-const { auth } = require('../middleware/auth');
+const { 
+  createProduct, 
+  updateProduct, 
+  deleteProduct, 
+  bulkUpdateStock, 
+  getLowStockProducts, 
+  uploadImage 
+} = require('../controllers/adminController');
+const { 
+  getDashboardStats, 
+  getSalesByDate, 
+  getTopProducts, 
+  getLowStockAnalytics, 
+  getOrderSummary 
+} = require('../controllers/analyticController');
+const { verifyToken, verifyAdmin } = require('../middleware/auth');
+const { validateProductInput } = require('../middleware/validation');
+const multer = require('multer');
 
-// Dashboard statistics
-router.get('/dashboard', auth, adminController.getDashboardStats);
+// File upload setup
+const upload = multer({ 
+  dest: 'uploads/',
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files allowed'), false);
+    }
+  },
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+});
 
-// Get all users with pagination
-router.get(
-  '/users',
-  auth,
-  [
-    query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
-    query('search').optional().trim()
-  ],
-  adminController.getAllUsers
-);
+// All routes protected + admin only
+router.use(verifyToken, verifyAdmin);  // Middleware for all routes below
 
-// Get user details
-router.get(
-  '/users/:userId',
-  auth,
-  [param('userId').isMongoId().withMessage('Invalid user ID')],
-  adminController.getUserDetails
-);
+// Product management
+router.post('/products', validateProductInput, createProduct);  // POST /api/admin/products
+router.put('/products/:id', updateProduct);  // PUT /api/admin/products/:id
+router.delete('/products/:id', deleteProduct);  // DELETE /api/admin/products/:id
+router.put('/products/stock', bulkUpdateStock);  // PUT /api/admin/products/stock
+router.get('/products/stock', getLowStockProducts);  // GET /api/admin/products/stock
+router.post('/products/upload', upload.single('image'), uploadImage);  // POST /api/admin/products/upload
 
-// Update user status
-router.put(
-  '/users/:userId/status',
-  auth,
-  [
-    param('userId').isMongoId().withMessage('Invalid user ID'),
-    body('status').isIn(['active', 'blocked']).withMessage('Invalid status')
-  ],
-  adminController.updateUserStatus
-);
-
-// Get all orders with pagination and filters
-router.get(
-  '/orders',
-  auth,
-  [
-    query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
-    query('status').optional().isIn(['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded']),
-    query('dateFrom').optional().isISO8601().withMessage('Invalid date format'),
-    query('dateTo').optional().isISO8601().withMessage('Invalid date format'),
-    query('search').optional().trim()
-  ],
-  adminController.getAllOrders
-);
-
-// Get sales analytics
-router.get(
-  '/analytics/sales',
-  auth,
-  [
-    query('period').optional().isIn(['today', 'week', 'month', 'year', 'all']).withMessage('Invalid period')
-  ],
-  adminController.getSalesAnalytics
-);
-
-// Get product analytics
-router.get(
-  '/analytics/products',
-  auth,
-  adminController.getProductAnalytics
-);
-
-// Get low stock products
-router.get(
-  '/products/low-stock',
-  auth,
-  [
-    query('threshold').optional().isInt({ min: 0 }).withMessage('Threshold must be a non-negative integer')
-  ],
-  adminController.getLowStockProducts
-);
-
-// Bulk update product prices
-router.put(
-  '/products/bulk-update',
-  auth,
-  [
-    body('productIds').isArray({ min: 1 }).withMessage('At least one product ID is required'),
-    body('action').isIn(['increase', 'decrease', 'set']).withMessage('Invalid action'),
-    body('value').isFloat({ min: 0 }).withMessage('Value must be a positive number')
-  ],
-  adminController.bulkUpdateProducts
-);
-
-// Export orders (CSV/Excel)
-router.get(
-  '/orders/export',
-  auth,
-  [
-    query('format').optional().isIn(['csv', 'excel']).withMessage('Format must be csv or excel'),
-    query('dateFrom').optional().isISO8601().withMessage('Invalid date format'),
-    query('dateTo').optional().isISO8601().withMessage('Invalid date format')
-  ],
-  adminController.exportOrders
-);
-
-// Get recent activities
-router.get(
-  '/activities/recent',
-  auth,
-  [
-    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100')
-  ],
-  adminController.getRecentActivities
-);
+// Analytics
+router.get('/analytics/stats', getDashboardStats);  // GET /api/admin/analytics/stats
+router.get('/analytics/sales-by-date', getSalesByDate);  // GET /api/admin/analytics/sales-by-date
+router.get('/analytics/top-products', getTopProducts);  // GET /api/admin/analytics/top-products
+router.get('/analytics/low-stock', getLowStockAnalytics);  // GET /api/admin/analytics/low-stock
+router.get('/analytics/orders', getOrderSummary);  // GET /api/admin/analytics/orders
 
 module.exports = router;

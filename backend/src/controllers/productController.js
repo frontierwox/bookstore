@@ -134,15 +134,20 @@ exports.searchProducts = asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || PAGINATION.DEFAULT_LIMIT;
   const skip = (page - 1) * limit;
 
+  const q = req.query.q || req.params.query;
+  if (!q) {
+    throw new AppError(400, 'Search query is required');
+  }
+
   const products = await Product.find(
-    { $text: { $search: req.params.query } },
+    { $text: { $search: q } },
     { score: { $meta: 'textScore' } }
   )
     .sort({ score: { $meta: 'textScore' } })
     .skip(skip)
     .limit(limit);
 
-  const total = await Product.countDocuments({ $text: { $search: req.params.query } });
+  const total = await Product.countDocuments({ $text: { $search: q } });
 
   res.json({
     success: true,
@@ -288,5 +293,39 @@ exports.addReview = asyncHandler(async (req, res) => {
     success: true,
     message: 'Review added successfully',
     ratings: product.ratings
+  });
+});
+
+// Aliases for route compatibility
+exports.getByCategory = exports.getProductsByCategory;
+
+// Get products by occasion (matches tags)
+// @route   GET /api/products/occasion/:occasion
+// @access  Public
+exports.getByOccasion = asyncHandler(async (req, res) => {
+  const page = parseInt(req.query.page) || PAGINATION.DEFAULT_PAGE;
+  const limit = parseInt(req.query.limit) || PAGINATION.DEFAULT_LIMIT;
+  const skip = (page - 1) * limit;
+
+  const occasion = req.params.occasion;
+  if (!occasion) {
+    throw new AppError(400, 'Occasion is required');
+  }
+
+  const occasionRegex = new RegExp(occasion, 'i');
+  const query = { tags: occasionRegex };
+
+  const products = await Product.find(query)
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  const total = await Product.countDocuments(query);
+
+  res.json({
+    success: true,
+    count: products.length,
+    total,
+    products
   });
 });

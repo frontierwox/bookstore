@@ -243,3 +243,6 @@ exports.setDefaultAddress = asyncHandler(async (req, res) => {
     addresses: user.addresses
   });
 });
+
+// Alias for getProfile
+exports.getProfile = exports.getCurrentUser;

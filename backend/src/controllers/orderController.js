@@ -277,3 +277,6 @@ exports.addOrderNote = asyncHandler(async (req, res) => {
     order
   });
 });
+
+// Alias for route compatibility
+exports.getOrders = exports.getUserOrders;
