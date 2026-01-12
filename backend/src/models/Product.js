@@ -89,16 +89,26 @@ const productSchema = new mongoose.Schema({
     ref: 'User'
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
 
-// Virtual for final price
+// Virtual for final price (only when discount is active)
 productSchema.virtual('finalPrice').get(function() {
-  if (this.discountPercentage > 0) {
+  if (this.isDiscountActive()) {
     const discountAmount = (this.price * this.discountPercentage) / 100;
     return this.price - discountAmount;
   }
   return this.price;
+});
+
+productSchema.virtual('discountActive').get(function() {
+  return this.isDiscountActive();
+});
+
+productSchema.virtual('currentPrice').get(function() {
+  return this.getCurrentPrice();
 });
 
 // Method to check if discount is currently active

@@ -654,6 +654,17 @@ exports.getAnalyticsOverview = asyncHandler(async (req, res) => {
     }
   ]);
 
+  const [pendingOrdersCount, cancelledOrdersCount, refundedOrdersCount] = await Promise.all([
+    Order.countDocuments({ status: 'pending' }),
+    Order.countDocuments({ status: 'cancelled' }),
+    Order.countDocuments({ status: 'refunded' })
+  ]);
+
+  const refundedAmountAgg = await Order.aggregate([
+    { $match: { status: 'refunded' } },
+    { $group: { _id: null, totalRefunded: { $sum: '$totalAmount' } } }
+  ]);
+
   res.json({
     success: true,
     analytics: {
@@ -667,7 +678,10 @@ exports.getAnalyticsOverview = asyncHandler(async (req, res) => {
         orders: {
           current: currentOrdersCount,
           previous: previousOrdersCount,
-          growth: Math.round(ordersGrowth * 100) / 100
+          growth: Math.round(ordersGrowth * 100) / 100,
+          pending: pendingOrdersCount,
+          cancelled: cancelledOrdersCount,
+          refunded: refundedOrdersCount
         },
         averageOrderValue: {
           current: Math.round(currentAOV * 100) / 100,
@@ -684,6 +698,9 @@ exports.getAnalyticsOverview = asyncHandler(async (req, res) => {
         },
         discounts: {
           totalGiven: totalDiscountGiven[0]?.totalDiscount || 0
+        },
+        refunds: {
+          totalRefunded: refundedAmountAgg[0]?.totalRefunded || 0
         }
       },
       orderStatusBreakdown,
@@ -937,5 +954,122 @@ exports.getDiscountAnalytics = asyncHandler(async (req, res) => {
       byCategory: discountByCategory,
       topDiscountedProducts
     }
+  });
+});
+
+// @desc    Get products with pagination and filters
+// @route   GET /api/admin/products
+// @access  Private (Admin)
+exports.getProducts = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new AppError(400, errors.array()[0].msg);
+  }
+
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  const skip = (page - 1) * limit;
+
+  const query = {};
+
+  if (req.query.search) {
+    const regex = new RegExp(req.query.search, 'i');
+    query.$or = [{ name: regex }, { description: regex }];
+  }
+
+  if (req.query.category) {
+    query.category = req.query.category;
+  }
+
+  if (req.query.hasDiscount !== undefined && req.query.hasDiscount !== '') {
+    const hasDiscount = req.query.hasDiscount === true || req.query.hasDiscount === 'true';
+    query.discountPercentage = hasDiscount ? { $gt: 0 } : { $lte: 0 };
+  }
+
+  const [products, total] = await Promise.all([
+    Product.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    Product.countDocuments(query)
+  ]);
+
+  res.json({
+    success: true,
+    page,
+    limit,
+    total,
+    products
+  });
+});
+
+// @desc    Get products with discounts
+// @route   GET /api/admin/products/with-discounts
+// @access  Private (Admin)
+exports.getProductsWithDiscounts = asyncHandler(async (req, res) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  const skip = (page - 1) * limit;
+
+  const query = { discountPercentage: { $gt: 0 } };
+
+  const [products, total] = await Promise.all([
+    Product.find(query)
+      .sort({ updatedAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    Product.countDocuments(query)
+  ]);
+
+  res.json({
+    success: true,
+    page,
+    limit,
+    total,
+    products
+  });
+});
+
+// @desc    Get single order details
+// @route   GET /api/admin/orders/:id
+// @access  Private (Admin)
+exports.getOrderById = require('./orderController').getOrderById;
+
+// @desc    Update order status
+// @route   PUT /api/admin/orders/:id/status
+// @access  Private (Admin)
+exports.updateOrderStatus = require('./orderController').updateOrderStatus;
+
+// @desc    Resend order notification email
+// @route   POST /api/admin/orders/:id/resend-email
+// @access  Private (Admin)
+exports.resendOrderEmail = require('./orderController').resendOrderEmail;
+
+// @desc    Refund/Cancellation analytics
+// @route   GET /api/admin/analytics/refunds
+// @access  Private (Admin)
+exports.getRefundAnalytics = asyncHandler(async (req, res) => {
+  const refundStats = await Order.aggregate([
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        totalAmount: { $sum: '$totalAmount' }
+      }
+    }
+  ]);
+
+  const byStatus = refundStats.reduce((acc, row) => {
+    acc[row._id] = { count: row.count, totalAmount: row.totalAmount };
+    return acc;
+  }, {});
+
+  res.json({
+    success: true,
+    refunds: {
+      cancelled: byStatus.cancelled || { count: 0, totalAmount: 0 },
+      refunded: byStatus.refunded || { count: 0, totalAmount: 0 }
+    },
+    breakdown: refundStats
   });
 });

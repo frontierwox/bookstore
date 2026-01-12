@@ -10,6 +10,7 @@ router.post('/login', validateEmail, validatePassword, login);
 router.post('/logout', logout);
 
 // Protected routes
+router.get('/me', verifyToken, getProfile); // Alias for frontend compatibility
 router.get('/profile', verifyToken, getProfile);
 router.put('/profile', verifyToken, updateProfile);
 

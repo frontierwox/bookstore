@@ -3,6 +3,18 @@ const { validationResult } = require('express-validator');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { PAGINATION, PRODUCT_CATEGORIES } = require('../config/constants');
 
+const formatProduct = (product) => {
+  const discountActive = typeof product.isDiscountActive === 'function' ? product.isDiscountActive() : false;
+  const obj = product.toObject({ virtuals: true });
+
+  // Always return live pricing; never trust stored discountedPrice (it can go stale)
+  obj.discountActive = discountActive;
+  obj.discountedPrice = discountActive ? product.finalPrice : null;
+  obj.currentPrice = typeof product.getCurrentPrice === 'function' ? product.getCurrentPrice() : obj.price;
+
+  return obj;
+};
+
 // @desc    Get all products with filtering and pagination
 // @route   GET /api/products
 // @access  Public
@@ -79,7 +91,7 @@ exports.getAllProducts = asyncHandler(async (req, res) => {
       hasNext: page < totalPages,
       hasPrev: page > 1
     },
-    products
+    products: products.map(formatProduct)
   });
 });
 
@@ -96,7 +108,7 @@ exports.getFeaturedProducts = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     count: products.length,
-    products
+    products: products.map(formatProduct)
   });
 });
 
@@ -117,7 +129,7 @@ exports.getProductById = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    product
+    product: formatProduct(product)
   });
 });
 
@@ -153,7 +165,7 @@ exports.searchProducts = asyncHandler(async (req, res) => {
     success: true,
     count: products.length,
     total,
-    products
+    products: products.map(formatProduct)
   });
 });
 
@@ -187,7 +199,7 @@ exports.getProductsByCategory = asyncHandler(async (req, res) => {
     success: true,
     count: products.length,
     total,
-    products
+    products: products.map(formatProduct)
   });
 });
 
@@ -326,6 +338,6 @@ exports.getByOccasion = asyncHandler(async (req, res) => {
     success: true,
     count: products.length,
     total,
-    products
+    products: products.map(formatProduct)
   });
 });

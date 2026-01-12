@@ -8,13 +8,30 @@ const { asyncHandler, AppError } = require('../middleware/errorHandler');
 // @access  Private
 exports.getCart = asyncHandler(async (req, res) => {
   let cart = await Cart.findOne({ user: req.user._id })
-    .populate('items.product', 'name price images stock discountPrice');
+    .populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
 
   if (!cart) {
     cart = await Cart.create({
       user: req.user._id,
       items: []
     });
+  }
+
+  let shouldSave = false;
+  for (const item of cart.items) {
+    const product = item.product;
+    if (product && typeof product.getCurrentPrice === 'function') {
+      const currentPrice = product.getCurrentPrice();
+      if (item.price !== currentPrice) {
+        item.price = currentPrice;
+        shouldSave = true;
+      }
+    }
+  }
+
+  if (shouldSave) {
+    await cart.save();
+    await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
   }
 
   res.json({
@@ -62,23 +79,25 @@ exports.addToCart = asyncHandler(async (req, res) => {
             item.selectedColor === selectedColor
   );
 
+  const unitPrice = typeof productDoc.getCurrentPrice === 'function'
+    ? productDoc.getCurrentPrice()
+    : productDoc.price;
+
   if (existingItemIndex > -1) {
-    // Update quantity
     cart.items[existingItemIndex].quantity += quantity;
+    cart.items[existingItemIndex].price = unitPrice;
   } else {
-    // Add new item
-    const price = productDoc.discountPrice || productDoc.price;
     cart.items.push({
       product,
       quantity,
-      price,
+      price: unitPrice,
       selectedSize,
       selectedColor
     });
   }
 
   await cart.save();
-  await cart.populate('items.product', 'name price images stock discountPrice');
+  await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
 
   res.json({
     success: true,
@@ -118,8 +137,10 @@ exports.updateCartItem = asyncHandler(async (req, res) => {
   }
 
   item.quantity = quantity;
+  item.price = typeof product.getCurrentPrice === 'function' ? product.getCurrentPrice() : product.price;
+
   await cart.save();
-  await cart.populate('items.product', 'name price images stock discountPrice');
+  await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
 
   res.json({
     success: true,
@@ -154,7 +175,7 @@ exports.updateCartItemDetails = asyncHandler(async (req, res) => {
   if (selectedColor) item.selectedColor = selectedColor;
 
   await cart.save();
-  await cart.populate('items.product', 'name price images stock discountPrice');
+  await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
 
   res.json({
     success: true,
@@ -187,7 +208,7 @@ exports.removeFromCart = asyncHandler(async (req, res) => {
 
   item.remove();
   await cart.save();
-  await cart.populate('items.product', 'name price images stock discountPrice');
+  await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
 
   res.json({
     success: true,
@@ -252,7 +273,24 @@ exports.mergeCart = asyncHandler(async (req, res) => {
   }
 
   await cart.save();
-  await cart.populate('items.product', 'name price images stock discountPrice');
+  await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
+
+  let shouldSave = false;
+  for (const item of cart.items) {
+    const product = item.product;
+    if (product && typeof product.getCurrentPrice === 'function') {
+      const currentPrice = product.getCurrentPrice();
+      if (item.price !== currentPrice) {
+        item.price = currentPrice;
+        shouldSave = true;
+      }
+    }
+  }
+
+  if (shouldSave) {
+    await cart.save();
+    await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
+  }
 
   res.json({
     success: true,

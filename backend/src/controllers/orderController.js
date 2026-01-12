@@ -7,7 +7,7 @@ const { SHIPPING, TAX_RATE } = require('../config/constants');
 const { sendOrderConfirmation, sendOrderShipped, sendOrderDelivered, sendAdminNotification } = require('../utils/emailService');
 
 // @desc    Create new order
-// @route   POST /api/orders
+// @route   POST /api/orders/create
 // @access  Private
 exports.createOrder = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
@@ -17,9 +17,16 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
   const { items, shippingAddress, paymentMethod } = req.body;
 
-  // Calculate subtotal and discounts
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new AppError(400, 'Order items are required');
+  }
+
+  const orderItems = [];
+
+  let originalSubtotal = 0;
   let subtotal = 0;
   let totalDiscount = 0;
+
   const appliedDiscounts = [];
 
   for (const item of items) {
@@ -28,47 +35,58 @@ exports.createOrder = asyncHandler(async (req, res) => {
       throw new AppError(404, `Product ${item.product} not found`);
     }
 
-    const itemPrice = product.getCurrentPrice();
-    const originalPrice = product.price;
-    const discountAmount = originalPrice - itemPrice;
-    const discountPercentage = product.discountPercentage;
+    if (product.stock < item.quantity) {
+      throw new AppError(400, `Insufficient stock for ${product.name}`);
+    }
 
-    if (discountAmount > 0) {
-      totalDiscount += discountAmount * item.quantity;
+    const unitPrice = product.getCurrentPrice();
+    const originalUnitPrice = product.price;
+
+    originalSubtotal += originalUnitPrice * item.quantity;
+    subtotal += unitPrice * item.quantity;
+
+    const unitDiscount = originalUnitPrice - unitPrice;
+    if (unitDiscount > 0) {
+      const lineDiscount = unitDiscount * item.quantity;
+      totalDiscount += lineDiscount;
+
       appliedDiscounts.push({
         productId: product._id,
         productName: product.name,
-        originalPrice,
-        discountPercentage,
-        discountAmount: discountAmount * item.quantity,
-        finalPrice: itemPrice * item.quantity
+        originalPrice: originalUnitPrice,
+        discountPercentage: product.discountPercentage,
+        discountAmount: lineDiscount,
+        finalPrice: unitPrice * item.quantity
       });
     }
 
-    subtotal += itemPrice * item.quantity;
+    orderItems.push({
+      product: product._id,
+      name: product.name,
+      image: product.images?.[0]?.url,
+      quantity: item.quantity,
+      price: unitPrice,
+      selectedSize: item.selectedSize,
+      selectedColor: item.selectedColor
+    });
   }
 
-  // Calculate shipping cost
   const shippingCost = subtotal >= SHIPPING.FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING.DEFAULT_COST;
-
-  // Calculate tax
   const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
-
-  // Calculate total
   const totalAmount = subtotal + shippingCost + tax;
 
-  // Create order
+  const initialStatus = paymentMethod === 'cod' ? 'confirmed' : 'pending';
+
   const order = await Order.create({
     user: req.user._id,
     customerEmail: req.user.email,
     customerPhone: req.user.phone || shippingAddress.phone,
-    items: items.map(item => ({
-      ...item,
-      price: item.price // Keep original price for historical purposes
-    })),
+    items: orderItems,
     shippingAddress,
     paymentMethod,
+    originalSubtotal,
     subtotal,
+    discountApplied: totalDiscount,
     shippingCost,
     tax,
     discount: totalDiscount,
@@ -77,46 +95,46 @@ exports.createOrder = asyncHandler(async (req, res) => {
       appliedDiscounts
     },
     totalAmount,
+    status: initialStatus,
     estimatedDelivery: new Date(Date.now() + SHIPPING.ESTIMATED_DELIVERY_DAYS * 24 * 60 * 60 * 1000)
   });
 
-  // Update product stock
-  for (const item of items) {
+  for (const item of orderItems) {
     await Product.findByIdAndUpdate(item.product, {
       $inc: { stock: -item.quantity }
     });
   }
 
-  // Clear cart
   await Cart.findOneAndUpdate(
     { user: req.user._id },
     { items: [] }
   );
 
-  // Add initial status
   order.statusHistory.push({
-    status: 'pending',
-    note: 'Order placed'
+    status: initialStatus,
+    note: initialStatus === 'confirmed' ? 'Order placed (COD)' : 'Order created, awaiting payment'
   });
   await order.save();
 
-  // Send order confirmation email
-  try {
-    await sendOrderConfirmation(order);
-    order.emailNotifications.confirmationSent = true;
-    order.emailNotifications.confirmationSentAt = new Date();
-    await order.save();
-  } catch (emailError) {
-    console.error('Failed to send order confirmation email:', emailError);
-    // Don't fail the order creation if email fails
+  const shouldSendConfirmationNow = paymentMethod !== 'razorpay' && paymentMethod !== 'card';
+
+  if (shouldSendConfirmationNow) {
+    try {
+      await sendOrderConfirmation(order);
+      order.emailNotifications.confirmationSent = true;
+      order.emailNotifications.confirmationSentAt = new Date();
+      order.emailSent = true;
+      order.emailSentAt = new Date();
+      await order.save();
+    } catch (emailError) {
+      console.error('Failed to send order confirmation email:', emailError);
+    }
   }
 
-  // Send admin notification
   try {
     await sendAdminNotification(order);
   } catch (emailError) {
     console.error('Failed to send admin notification:', emailError);
-    // Don't fail the order creation if admin email fails
   }
 
   res.status(201).json({

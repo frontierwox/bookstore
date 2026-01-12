@@ -1,27 +1,39 @@
 const express = require('express');
 const router = express.Router();
-const { 
-  createProduct, 
-  updateProduct, 
-  deleteProduct, 
-  bulkUpdateStock, 
-  getLowStockProducts, 
+const {
+  getDashboardStats: getAdminDashboardStats,
+  getAllUsers,
+  getUserDetails,
+  updateUserStatus,
+  getProducts,
+  getProductsWithDiscounts,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  bulkUpdateStock,
+  getLowStockProducts,
   uploadImage,
+  exportOrders,
+  getRecentActivities,
   getAnalyticsOverview,
   getTopSellingProducts,
   updateProductDiscount,
   getDiscountAnalytics,
+  getRefundAnalytics,
   getAllOrders,
+  getOrderById,
   updateOrderStatus,
   resendOrderEmail
 } = require('../controllers/adminController');
-const { 
-  getDashboardStats, 
-  getSalesByDate, 
-  getTopProducts, 
-  getLowStockAnalytics, 
-  getOrderSummary 
+
+const {
+  getDashboardStats: getAnalyticsStats,
+  getSalesByDate,
+  getTopProducts,
+  getLowStockAnalytics,
+  getOrderSummary
 } = require('../controllers/analyticController');
+
 const { verifyToken, verifyAdmin } = require('../middleware/auth');
 const { validateProductInput } = require('../middleware/validation');
 const multer = require('multer');
@@ -42,12 +54,20 @@ const upload = multer({
 // All routes protected + admin only
 router.use(verifyToken, verifyAdmin);  // Middleware for all routes below
 
+// Dashboard
+router.get('/dashboard', getAdminDashboardStats);  // GET /api/admin/dashboard
+
 // Product management
+router.get('/products', getProducts);  // GET /api/admin/products
+router.get('/products/with-discounts', getProductsWithDiscounts);  // GET /api/admin/products/with-discounts
 router.post('/products', validateProductInput, createProduct);  // POST /api/admin/products
 router.put('/products/:id', updateProduct);  // PUT /api/admin/products/:id
 router.delete('/products/:id', deleteProduct);  // DELETE /api/admin/products/:id
+
+// Stock
 router.put('/products/stock', bulkUpdateStock);  // PUT /api/admin/products/stock
 router.get('/products/stock', getLowStockProducts);  // GET /api/admin/products/stock
+router.get('/products/low-stock', getLowStockProducts);  // GET /api/admin/products/low-stock (alias)
 router.post('/products/upload', upload.single('image'), uploadImage);  // POST /api/admin/products/upload
 
 // Product discount management
@@ -57,9 +77,10 @@ router.put('/products/:id/discount', updateProductDiscount);  // PUT /api/admin/
 router.get('/analytics/overview', getAnalyticsOverview);  // GET /api/admin/analytics/overview
 router.get('/analytics/top-products', getTopSellingProducts);  // GET /api/admin/analytics/top-products
 router.get('/analytics/discounts', getDiscountAnalytics);  // GET /api/admin/analytics/discounts
+router.get('/analytics/refunds', getRefundAnalytics);  // GET /api/admin/analytics/refunds
 
 // Legacy analytics routes (keeping for compatibility)
-router.get('/analytics/stats', getDashboardStats);  // GET /api/admin/analytics/stats
+router.get('/analytics/stats', getAnalyticsStats);  // GET /api/admin/analytics/stats
 router.get('/analytics/sales-by-date', getSalesByDate);  // GET /api/admin/analytics/sales-by-date
 router.get('/analytics/top-products-legacy', getTopProducts);  // GET /api/admin/analytics/top-products-legacy
 router.get('/analytics/low-stock', getLowStockAnalytics);  // GET /api/admin/analytics/low-stock
@@ -67,7 +88,17 @@ router.get('/analytics/orders', getOrderSummary);  // GET /api/admin/analytics/o
 
 // Order management
 router.get('/orders', getAllOrders);  // GET /api/admin/orders
+router.get('/orders/export', exportOrders);  // GET /api/admin/orders/export
+router.get('/orders/:id', getOrderById);  // GET /api/admin/orders/:id
 router.put('/orders/:id/status', updateOrderStatus);  // PUT /api/admin/orders/:id/status
 router.post('/orders/:id/resend-email', resendOrderEmail);  // POST /api/admin/orders/:id/resend-email
+
+// Users
+router.get('/users', getAllUsers);  // GET /api/admin/users
+router.get('/users/:userId', getUserDetails);  // GET /api/admin/users/:userId
+router.put('/users/:userId/status', updateUserStatus);  // PUT /api/admin/users/:userId/status
+
+// Activities
+router.get('/activities/recent', getRecentActivities);  // GET /api/admin/activities/recent
 
 module.exports = router;

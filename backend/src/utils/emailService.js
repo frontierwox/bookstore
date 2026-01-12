@@ -54,6 +54,64 @@ const transporter = createTransporter();
 
 // Email templates
 const emailTemplates = {
+  adminNotification: (order) => ({
+    subject: `New Order Received - ${order.orderNumber}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #333;">New Order Received</h2>
+        <p><strong>Order Number:</strong> ${order.orderNumber}</p>
+        <p><strong>Customer:</strong> ${order.shippingAddress?.name || 'N/A'}</p>
+        <p><strong>Email:</strong> ${order.user?.email || order.customerEmail || 'N/A'}</p>
+        <p><strong>Phone:</strong> ${order.shippingAddress?.phone || order.customerPhone || 'N/A'}</p>
+        <p><strong>Total Amount:</strong> ₹${order.totalAmount}</p>
+        <p><strong>Payment Method:</strong> ${(order.paymentMethod || '').toUpperCase()}</p>
+        <p><strong>Status:</strong> ${order.status}</p>
+
+        <h3>Items</h3>
+        <ul>
+          ${(order.items || []).map(i => `<li>${i.name} × ${i.quantity} (₹${i.price})</li>`).join('')}
+        </ul>
+
+        ${order.shippingAddress ? `
+          <h3>Shipping Address</h3>
+          <p>
+            ${order.shippingAddress.address}<br>
+            ${order.shippingAddress.city}, ${order.shippingAddress.state} - ${order.shippingAddress.pincode}
+          </p>
+        ` : ''}
+      </div>
+    `
+  }),
+
+  paymentConfirmed: (order) => ({
+    subject: `Payment Confirmed - ${order.orderNumber}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background-color: #f8f9fa; padding: 20px; text-align: center;">
+          <h1 style="color: #333; margin: 0;">SareeWeb</h1>
+          <p style="color: #666; margin: 5px 0 0 0;">Traditional Indian Sarees</p>
+        </div>
+
+        <div style="padding: 20px;">
+          <h2 style="color: #333;">Payment Confirmed</h2>
+          <p>Dear ${order.shippingAddress?.name || 'Customer'},</p>
+          <p>We have successfully received your payment for order <strong>${order.orderNumber}</strong>.</p>
+
+          <div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0;"><strong>Amount Paid:</strong> ₹${order.totalAmount}</p>
+            <p style="margin: 5px 0 0 0;"><strong>Payment Method:</strong> ${(order.paymentMethod || '').toUpperCase()}</p>
+          </div>
+
+          <p>We will start processing your order and will notify you when it ships.</p>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.FRONTEND_URL}/orders/${order._id}" style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">View Your Order</a>
+          </div>
+        </div>
+      </div>
+    `
+  }),
+
   orderConfirmation: (order) => ({
     subject: `Order Confirmation - ${order.orderNumber}`,
     html: `
@@ -201,7 +259,7 @@ const sendEmail = async (to, template, data) => {
     
     const mailOptions = {
       from: {
-        name: 'SareeWeb',
+        name: process.env.EMAIL_FROM_NAME || 'SareeWeb',
         address: process.env.EMAIL_USER
       },
       to: to,
@@ -251,6 +309,17 @@ const sendOrderDelivered = async (order) => {
   return await sendEmail(customerEmail, 'orderDelivered', order);
 };
 
+// Send payment confirmation email
+const sendPaymentConfirmed = async (order) => {
+  const customerEmail = order.user?.email || order.customerEmail;
+  if (!customerEmail) {
+    console.error('Customer email not found for order:', order.orderNumber);
+    return { success: false, error: 'Customer email not found' };
+  }
+
+  return await sendEmail(customerEmail, 'paymentConfirmed', order);
+};
+
 // Send admin notification
 const sendAdminNotification = async (order) => {
   const adminEmail = process.env.ADMIN_EMAIL;
@@ -259,30 +328,13 @@ const sendAdminNotification = async (order) => {
     return { success: false, error: 'Admin email not configured' };
   }
 
-  const subject = `New Order Received - ${order.orderNumber}`;
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-      <h2 style="color: #333;">New Order Received</h2>
-      <p><strong>Order Number:</strong> ${order.orderNumber}</p>
-      <p><strong>Customer:</strong> ${order.shippingAddress.name}</p>
-      <p><strong>Email:</strong> ${order.user?.email || order.customerEmail}</p>
-      <p><strong>Phone:</strong> ${order.shippingAddress.phone}</p>
-      <p><strong>Total Amount:</strong> ₹${order.totalAmount}</p>
-      <p><strong>Payment Method:</strong> ${order.paymentMethod}</p>
-      <p><strong>Items:</strong> ${order.items.length}</p>
-      
-      <h3>Shipping Address</h3>
-      <p>${order.shippingAddress.address}<br>
-      ${order.shippingAddress.city}, ${order.shippingAddress.state} - ${order.shippingAddress.pincode}</p>
-    </div>
-  `;
-
-  return await sendEmail(adminEmail, 'adminNotification', { ...order, subject });
+  return await sendEmail(adminEmail, 'adminNotification', order);
 };
 
 module.exports = {
   sendEmail,
   sendOrderConfirmation,
+  sendPaymentConfirmed,
   sendOrderShipped,
   sendOrderDelivered,
   sendAdminNotification

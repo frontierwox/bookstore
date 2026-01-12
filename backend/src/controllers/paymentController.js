@@ -4,6 +4,7 @@ const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const { validationResult } = require('express-validator');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
+const { sendOrderConfirmation, sendAdminNotification } = require('../utils/emailService');
 
 // Initialize Razorpay (only if keys are provided)
 let razorpay = null;
@@ -21,6 +22,10 @@ exports.createRazorpayOrder = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     throw new AppError(400, errors.array()[0].msg);
+  }
+
+  if (!razorpay) {
+    throw new AppError(500, 'Razorpay is not configured');
   }
 
   const { amount, currency = 'INR' } = req.body;
@@ -91,9 +96,47 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
     { upsert: true, new: true }
   );
 
-  // Update order payment status
+  // Update order payment status/details
   order.paymentStatus = 'completed';
+  order.paymentDetails = {
+    razorpayOrderId,
+    razorpayPaymentId,
+    razorpaySignature,
+    transactionId: razorpayPaymentId
+  };
+
+  const previousStatus = order.status;
+  if (order.status === 'pending') {
+    order.status = 'confirmed';
+  }
+
+  order.statusHistory.push({
+    status: order.status,
+    note: previousStatus === order.status ? 'Payment verified' : 'Payment verified and order confirmed'
+  });
+
   await order.save();
+
+  // Send confirmation email after successful payment
+  if (!order.emailNotifications?.confirmationSent) {
+    try {
+      await sendOrderConfirmation(order);
+      order.emailNotifications.confirmationSent = true;
+      order.emailNotifications.confirmationSentAt = new Date();
+      order.emailSent = true;
+      order.emailSentAt = new Date();
+      await order.save();
+    } catch (emailError) {
+      console.error('Failed to send payment confirmation email:', emailError);
+    }
+  }
+
+  // Send admin notification after payment
+  try {
+    await sendAdminNotification(order);
+  } catch (emailError) {
+    console.error('Failed to send admin notification:', emailError);
+  }
 
   res.json({
     success: true,

@@ -86,9 +86,17 @@ const orderSchema = new mongoose.Schema({
     razorpaySignature: String,
     transactionId: String
   },
+  originalSubtotal: {
+    type: Number,
+    default: 0
+  },
   subtotal: {
     type: Number,
     required: true
+  },
+  discountApplied: {
+    type: Number,
+    default: 0
   },
   shippingCost: {
     type: Number,
@@ -136,6 +144,11 @@ const orderSchema = new mongoose.Schema({
     },
     note: String
   }],
+  emailSent: {
+    type: Boolean,
+    default: false
+  },
+  emailSentAt: Date,
   emailNotifications: {
     confirmationSent: {
       type: Boolean,
