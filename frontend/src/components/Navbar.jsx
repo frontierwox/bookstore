@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ShoppingCart, User, Search, Menu, X } from 'react-icons/md'
+import { MdShoppingCart, MdPerson, MdSearch, MdMenu, MdClose } from 'react-icons/md'
 import { useContext } from 'react'
 import { AuthContext } from '../context/AuthContext'
 import { CartContext } from '../context/CartContext'
@@ -20,7 +20,7 @@ const Navbar = ({ appName }) => {
         <div className="navbar-search">
           <input type="text" placeholder="Search sarees..." />
           <button className="search-btn">
-            <Search size={20} />
+            <MdSearch size={20} />
           </button>
         </div>
 
@@ -34,7 +34,7 @@ const Navbar = ({ appName }) => {
         <div className="navbar-actions">
           {/* Cart */}
           <Link to="/cart" className="nav-action">
-            <ShoppingCart size={24} />
+            <MdShoppingCart size={24} />
             {itemCount > 0 && <span className="cart-badge">{itemCount}</span>}
           </Link>
 
@@ -42,7 +42,7 @@ const Navbar = ({ appName }) => {
           {user ? (
             <div className="user-menu">
               <Link to={user.role === 'admin' ? '/admin' : '/orders'} className="nav-action">
-                <User size={24} />
+                <MdPerson size={24} />
               </Link>
               <button onClick={logout} className="logout-btn">Logout</button>
             </div>
@@ -56,7 +56,7 @@ const Navbar = ({ appName }) => {
 
         {/* Mobile Menu Toggle */}
         <button className="mobile-menu-toggle">
-          <Menu size={24} />
+          <MdMenu size={24} />
         </button>
       </div>
     </nav>

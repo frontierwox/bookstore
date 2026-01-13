@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { MdTrash2, MdAdd, MdRemove } from 'react-icons/md'
+import { MdDelete, MdAdd, MdRemove } from 'react-icons/md'
 import { cartApi } from '../services/cart'
 import { AuthContext } from '../context/AuthContext'
 import CartSummary from '../components/CartSummary'
@@ -166,7 +166,7 @@ const Cart = () => {
                 onClick={() => handleRemoveItem(item._id)}
                 className="btn btn-icon btn-danger"
               >
-                <MdTrash2 size={20} />
+                <MdDelete size={20} />
               </button>
             </div>
           ))}

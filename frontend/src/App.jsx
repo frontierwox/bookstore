@@ -38,7 +38,12 @@ function App() {
       <AuthProvider>
         <AdminAuthProvider>
           <CartProvider>
-            <Router>
+            <Router
+              future={{
+                v7_startTransition: true,
+                v7_relativeSplatPath: true,
+              }}
+            >
               <div className="app">
                 <Navbar appName={appName} />
                 <main className="main-content">

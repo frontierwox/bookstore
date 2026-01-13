@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { MdShoppingCart, MdHeart, MdHeartOutline } from 'react-icons/md'
+import { MdShoppingCart, MdFavorite, MdFavoriteBorder } from 'react-icons/md'
 import { productsApi } from '../services/products'
 import { cartApi } from '../services/cart'
 import { CartContext } from '../context/CartContext'
@@ -265,7 +265,7 @@ const ProductDetails = () => {
               onClick={() => setIsWishlisted(!isWishlisted)}
               className="btn btn-outline btn-lg"
             >
-              {isWishlisted ? <MdHeart size={20} /> : <MdHeartOutline size={20} />}
+              {isWishlisted ? <MdFavorite size={20} /> : <MdFavoriteBorder size={20} />}
               {isWishlisted ? 'Wishlisted' : 'Wishlist'}
             </button>
           </div>

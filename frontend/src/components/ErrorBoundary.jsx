@@ -26,7 +26,7 @@ class ErrorBoundary extends Component {
           <div className="error-boundary-content">
             <h2>Something went wrong.</h2>
             <p>{this.state.error?.message || 'An unexpected error occurred.'}</p>
-            <button className="btn btn-primary" onClick={handleRetry}>
+            <button className="btn btn-primary" onClick={this.handleRetry}>
               Retry
             </button>
           </div>

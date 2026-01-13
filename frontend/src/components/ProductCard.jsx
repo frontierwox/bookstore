@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { MdHeartOutline, MdShoppingCart } from 'react-icons/md'
+import { MdFavoriteBorder, MdShoppingCart } from 'react-icons/md'
 
 const ProductCard = ({ product }) => {
   const formatPrice = (price) => {
@@ -32,7 +32,7 @@ const ProductCard = ({ product }) => {
 
           {/* Wishlist Button */}
           <button className="wishlist-btn">
-            <MdHeartOutline size={20} />
+            <MdFavoriteBorder size={20} />
           </button>
         </div>
 
