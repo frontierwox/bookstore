@@ -4,7 +4,6 @@ import { MdTrash2, MdAdd, MdRemove } from 'react-icons/md'
 import { cartApi } from '../services/cart'
 import { AuthContext } from '../context/AuthContext'
 import CartSummary from '../components/CartSummary'
-import './pages.css'
 
 const Cart = () => {
   const navigate = useNavigate()

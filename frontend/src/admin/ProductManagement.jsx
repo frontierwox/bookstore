@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { MdAdd, MdEdit, MdDelete, MdSearch } from 'react-icons/md'
 import { productsApi } from '../services/products'
-import './pages.css'
 
 const ProductManagement = () => {
   const [products, setProducts] = useState([])
@@ -19,7 +18,7 @@ const ProductManagement = () => {
     try {
       const params = { limit: 100 }
       if (categoryFilter) params.category = categoryFilter
-      const data = await productsApi.getAllProducts(params)
+      const data = await productsApi.getProducts(params)
       setProducts(data.products || [])
     } catch (error) {
       console.error('Error fetching products:', error)

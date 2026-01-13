@@ -15,7 +15,7 @@ export const AuthProvider = ({ children }) => {
     }
     try {
       const response = await api.get('/auth/me');
-      setUser(response.data);
+      setUser(response.data.user);
     } catch (error) {
       console.error('Failed to fetch user', error);
       logout();
@@ -36,7 +36,7 @@ export const AuthProvider = ({ children }) => {
       setToken(newToken);
       setUser(newUser);
       localStorage.setItem('authToken', newToken);
-      return { success: true };
+      return { success: true, user: newUser };
     } catch (error) {
       return { 
         success: false, 

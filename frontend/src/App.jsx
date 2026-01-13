@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { AdminAuthProvider } from './context/AdminAuthContext';
@@ -27,7 +27,8 @@ import ProductManagementDashboard from './admin/ProductManagementDashboard';
 import SalesAnalyticsDashboard from './admin/SalesAnalyticsDashboard';
 import OrderManagement from './admin/OrderManagement';
 import StockControl from './admin/StockControl';
-import Analytics from './admin/Analytics';
+import AdminProductForm from './admin/AdminProductForm';
+import AdminOrderDetails from './admin/AdminOrderDetails';
 
 function App() {
   const appName = import.meta.env.VITE_APP_NAME || 'Saree Store';
@@ -97,18 +98,21 @@ function App() {
                     
                     {/* Admin protected routes with layout */}
                     <Route
-                      path="/admin/*"
+                      path="/admin"
                       element={
                         <ProtectedRoute adminOnly>
                           <AdminLayout />
                         </ProtectedRoute>
                       }
                     >
-                      <Route index element={<AdminDashboard />} />
+                      <Route index element={<Navigate to="dashboard" replace />} />
+                      <Route path="dashboard" element={<AdminDashboard />} />
                       <Route path="products" element={<ProductManagementDashboard />} />
+                      <Route path="products/new" element={<AdminProductForm mode="create" />} />
+                      <Route path="products/:id/edit" element={<AdminProductForm mode="edit" />} />
                       <Route path="analytics" element={<SalesAnalyticsDashboard />} />
                       <Route path="orders" element={<OrderManagement />} />
-                      <Route path="users" element={<div className="coming-soon"><h2>User Management</h2><p>Coming soon...</p></div>} />
+                      <Route path="orders/:id" element={<AdminOrderDetails />} />
                       <Route path="stock" element={<StockControl />} />
                       <Route path="settings" element={<div className="coming-soon"><h2>Settings</h2><p>Coming soon...</p></div>} />
                     </Route>

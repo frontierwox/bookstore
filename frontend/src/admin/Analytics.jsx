@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { adminApi } from '../services/admin'
-import './pages.css'
 
 const Analytics = () => {
   const [salesData, setSalesData] = useState(null)

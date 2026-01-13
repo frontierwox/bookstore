@@ -4,7 +4,7 @@ import api from './api';
 const adminApi = {
   // Dashboard Stats
   getDashboardStats: async () => {
-    const response = await api.get('/admin/analytics/stats');
+    const response = await api.get('/admin/dashboard');
     return response.data;
   },
 

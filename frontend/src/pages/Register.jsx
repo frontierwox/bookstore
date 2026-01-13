@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import { MdEmail, MdLock, MdPerson, MdPhone } from 'react-icons/md'
 import { authApi } from '../services/auth'
 import { AuthContext } from '../context/AuthContext'
-import './pages.css'
 
 const Register = () => {
   const navigate = useNavigate()
@@ -39,8 +38,14 @@ const Register = () => {
 
     try {
       const { confirmPassword, ...registerData } = formData
-      const response = await authApi.register(registerData)
-      login(response.token, response.user)
+      await authApi.register(registerData)
+
+      const result = await login(formData.email, formData.password)
+      if (!result.success) {
+        setError(result.error || 'Registration succeeded but login failed. Please login.')
+        return
+      }
+
       navigate('/')
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed. Please try again.')

@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
 import { MdShoppingCart } from 'react-icons/md'
-import './components.css'
 
 const CartSummary = ({ cart, onCheckout }) => {
   if (!cart || cart.items.length === 0) {

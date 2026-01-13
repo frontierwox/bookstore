@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { MdTrendingDown, MdAdd, MdEdit } from 'react-icons/md'
 import { adminApi } from '../services/admin'
-import './pages.css'
 
 const StockControl = () => {
   const [products, setProducts] = useState([])

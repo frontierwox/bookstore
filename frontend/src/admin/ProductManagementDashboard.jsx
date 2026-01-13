@@ -12,7 +12,7 @@ import {
   MdAttachMoney,
   MdInventory
 } from 'react-icons/md'
-import { adminApi } from '../../services/admin'
+import { adminApi } from '../services/admin'
 import './AdminDashboards.css'
 
 const ProductManagementDashboard = () => {
@@ -285,12 +285,19 @@ const ProductManagementDashboard = () => {
                     </td>
                     <td>
                       <div className="action-buttons">
-                        <button
-                          onClick={() => setEditingProduct(product)}
+                        <Link
+                          to={`/admin/products/${product._id}/edit`}
                           className="btn-icon"
                           title="Edit Product"
                         >
                           <MdEdit size={16} />
+                        </Link>
+                        <button
+                          onClick={() => setEditingProduct(product)}
+                          className="btn-icon"
+                          title="Update Discount"
+                        >
+                          <MdAttachMoney size={16} />
                         </button>
                         <button
                           onClick={() => handleDeleteProduct(product._id)}

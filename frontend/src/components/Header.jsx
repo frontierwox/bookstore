@@ -1,10 +1,9 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { Link } from 'react-router-dom'
 import { MdShoppingCart, MdPerson, MdSearch, MdMenu, MdClose } from 'react-icons/md'
 import { useContext } from 'react'
 import { AuthContext } from '../context/AuthContext'
 import { CartContext } from '../context/CartContext'
-import './components.css'
 
 const Header = ({ appName }) => {
   const { user, logout } = useContext(AuthContext)

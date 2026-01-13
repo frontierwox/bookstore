@@ -1,28 +1,34 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useContext } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const { login } = useContext(AuthContext);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    
-    try {
-      // Admin login logic will go here
-      console.log('Admin login with:', email, password);
-      // If success
-      // navigate('/admin');
-    } catch (err) {
-      setError('Invalid credentials or not authorized.');
-    } finally {
+
+    const result = await login(email, password);
+
+    if (!result.success) {
+      setError(result.error || 'Invalid credentials or not authorized.');
       setLoading(false);
+      return;
     }
+
+    // AuthContext.login already sets user; role check happens in ProtectedRoute
+    const redirectTo = location.state?.from?.pathname || '/admin/dashboard';
+    navigate(redirectTo);
+    setLoading(false);
   };
 
   return (

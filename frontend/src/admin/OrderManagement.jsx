@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { MdSearch, MdFilterList } from 'react-icons/md'
-import { orderApi } from '../services/orders'
-import './pages.css'
+import { adminApi } from '../services/admin'
 
 const OrderManagement = () => {
   const [orders, setOrders] = useState([])
@@ -21,7 +20,7 @@ const OrderManagement = () => {
     try {
       const params = { page, limit: 20 }
       if (statusFilter) params.status = statusFilter
-      const data = await orderApi.getAllOrders(params)
+      const data = await adminApi.getOrders(params)
       setOrders(data.orders || [])
       setTotal(data.total || 0)
     } catch (error) {
@@ -33,7 +32,7 @@ const OrderManagement = () => {
 
   const handleStatusUpdate = async (orderId, newStatus) => {
     try {
-      await orderApi.updateOrderStatus(orderId, { status: newStatus })
+      await adminApi.updateOrderStatus(orderId, { status: newStatus })
       fetchOrders()
     } catch (error) {
       console.error('Error updating order:', error)

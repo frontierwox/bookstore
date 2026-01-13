@@ -4,7 +4,6 @@ import { cartApi } from '../services/cart'
 import { orderApi } from '../services/orders'
 import { paymentApi } from '../services/payments'
 import { AuthContext } from '../context/AuthContext'
-import './pages.css'
 
 const Checkout = () => {
   const navigate = useNavigate()

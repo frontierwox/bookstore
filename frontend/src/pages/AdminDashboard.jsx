@@ -1,262 +1,175 @@
-import { useState, useEffect } from 'react'
-import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom'
-import {
-  MdDashboard,
-  MdShoppingBag,
-  MdCategory,
-  MdPeople,
-  MdAssignment,
-  MdAnalytics,
-  MdSettings,
-  MdLogout
-} from 'react-icons/md'
-import { AuthContext } from '../context/AuthContext'
-import { adminApi } from '../services/admin'
-import './pages.css'
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { adminApi } from '../services/admin';
 
 const AdminDashboard = () => {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const { user, logout } = useContext(AuthContext)
-  const [stats, setStats] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [stats, setStats] = useState(null);
+  const [recentOrders, setRecentOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user?.role !== 'admin') {
-      navigate('/')
-      return
-    }
-    fetchDashboardStats()
-  }, [user, navigate])
+    fetchDashboardStats();
+  }, []);
 
   const fetchDashboardStats = async () => {
     try {
-      const data = await adminApi.getDashboardStats()
-      setStats(data.stats)
+      setLoading(true);
+      const data = await adminApi.getDashboardStats();
+      setStats(data.stats);
+      setRecentOrders(data.recentOrders || []);
     } catch (error) {
-      console.error('Error fetching dashboard stats:', error)
+      console.error('Error fetching dashboard stats:', error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const handleLogout = () => {
-    logout()
-    navigate('/')
-  }
+  const formatPrice = (price) => `₹${(price || 0).toLocaleString('en-IN')}`;
 
-  const formatPrice = (price) => {
-    return `₹${price?.toLocaleString('en-IN') || '0'}`
+  if (loading) {
+    return (
+      <div className="loading-container">
+        <div className="spinner"></div>
+        <p>Loading dashboard...</p>
+      </div>
+    );
   }
-
-  const menuItems = [
-    { path: '/admin', label: 'Dashboard', icon: MdDashboard },
-    { path: '/admin/products', label: 'Product Management', icon: MdShoppingBag },
-    { path: '/admin/analytics', label: 'Sales & Analytics', icon: MdAnalytics },
-    { path: '/admin/orders', label: 'Orders', icon: MdAssignment },
-    { path: '/admin/users', label: 'Users', icon: MdPeople },
-    { path: '/admin/stock', label: 'Stock Control', icon: MdCategory },
-    { path: '/admin/settings', label: 'Settings', icon: MdSettings }
-  ]
 
   return (
-    <div className="admin-dashboard">
-      {/* Sidebar */}
-      <aside className={`admin-sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <div className="sidebar-header">
-          <h2>Admin Panel</h2>
-          <button
-            className="close-sidebar"
-            onClick={() => setSidebarOpen(false)}
-          >
-            ×
-          </button>
-        </div>
+    <div className="admin-page">
+      <div className="page-header">
+        <h1>Dashboard Overview</h1>
+      </div>
 
-        <nav className="sidebar-nav">
-          {menuItems.map(item => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}
-            >
-              <item.icon size={20} />
-              <span>{item.label}</span>
-            </Link>
-          ))}
-        </nav>
-
-        <div className="sidebar-footer">
-          <button onClick={handleLogout} className="logout-btn">
-            <MdLogout size={20} />
-            <span>Logout</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="admin-content">
-        {/* Header */}
-        <header className="admin-header">
-          <button
-            className="menu-toggle"
-            onClick={() => setSidebarOpen(true)}
-          >
-            ☰
-          </button>
-          <h1>Admin Dashboard</h1>
-          <div className="admin-user">
-            <span>{user?.name}</span>
-            <span className="badge badge-admin">Admin</span>
+      <div className="dashboard-stats">
+        <div className="stat-card">
+          <div className="stat-icon stat-revenue">💰</div>
+          <div className="stat-info">
+            <h3>Total Revenue</h3>
+            <p className="stat-value">{formatPrice(stats?.totalRevenue)}</p>
+            <span className="stat-label">Lifetime earnings</span>
           </div>
-        </header>
+        </div>
 
-        {/* Dashboard Stats (only on main dashboard page) */}
-        {location.pathname === '/admin' && (
-          <>
-            {loading ? (
-              <div className="loading-container">
-                <div className="spinner"></div>
-                <p>Loading dashboard...</p>
-              </div>
-            ) : (
-              <div className="dashboard-stats">
-                <div className="stat-card">
-                  <div className="stat-icon stat-revenue">💰</div>
-                  <div className="stat-info">
-                    <h3>Total Revenue</h3>
-                    <p className="stat-value">{formatPrice(stats?.totalRevenue)}</p>
-                    <span className="stat-label">Lifetime earnings</span>
-                  </div>
-                </div>
+        <div className="stat-card">
+          <div className="stat-icon stat-orders">📦</div>
+          <div className="stat-info">
+            <h3>Total Orders</h3>
+            <p className="stat-value">{stats?.totalOrders || 0}</p>
+            <span className="stat-label">All time orders</span>
+          </div>
+        </div>
 
-                <div className="stat-card">
-                  <div className="stat-icon stat-orders">📦</div>
-                  <div className="stat-info">
-                    <h3>Total Orders</h3>
-                    <p className="stat-value">{stats?.totalOrders || 0}</p>
-                    <span className="stat-label">All time orders</span>
-                  </div>
-                </div>
+        <div className="stat-card">
+          <div className="stat-icon stat-users">👥</div>
+          <div className="stat-info">
+            <h3>Total Users</h3>
+            <p className="stat-value">{stats?.totalUsers || 0}</p>
+            <span className="stat-label">Registered users</span>
+          </div>
+        </div>
 
-                <div className="stat-card">
-                  <div className="stat-icon stat-users">👥</div>
-                  <div className="stat-info">
-                    <h3>Total Users</h3>
-                    <p className="stat-value">{stats?.totalUsers || 0}</p>
-                    <span className="stat-label">Registered users</span>
-                  </div>
-                </div>
+        <div className="stat-card">
+          <div className="stat-icon stat-products">👗</div>
+          <div className="stat-info">
+            <h3>Total Products</h3>
+            <p className="stat-value">{stats?.totalProducts || 0}</p>
+            <span className="stat-label">Active products</span>
+          </div>
+        </div>
 
-                <div className="stat-card">
-                  <div className="stat-icon stat-products">👗</div>
-                  <div className="stat-info">
-                    <h3>Total Products</h3>
-                    <p className="stat-value">{stats?.totalProducts || 0}</p>
-                    <span className="stat-label">Active products</span>
-                  </div>
-                </div>
+        <div className="stat-card">
+          <div className="stat-icon stat-pending">⏳</div>
+          <div className="stat-info">
+            <h3>Pending Orders</h3>
+            <p className="stat-value">{stats?.pendingOrders || 0}</p>
+            <span className="stat-label">Awaiting processing</span>
+          </div>
+        </div>
 
-                <div className="stat-card">
-                  <div className="stat-icon stat-pending">⏳</div>
-                  <div className="stat-info">
-                    <h3>Pending Orders</h3>
-                    <p className="stat-value">{stats?.pendingOrders || 0}</p>
-                    <span className="stat-label">Awaiting processing</span>
-                  </div>
-                </div>
+        <div className="stat-card">
+          <div className="stat-icon stat-low-stock">📉</div>
+          <div className="stat-info">
+            <h3>Low Stock</h3>
+            <p className="stat-value">{stats?.lowStockProducts || 0}</p>
+            <span className="stat-label">Below threshold</span>
+          </div>
+        </div>
+      </div>
 
-                <div className="stat-card">
-                  <div className="stat-icon stat-today">📅</div>
-                  <div className="stat-info">
-                    <h3>Today's Orders</h3>
-                    <p className="stat-value">{stats?.todaysOrders || 0}</p>
-                    <span className="stat-label">Orders today</span>
-                  </div>
-                </div>
-              </div>
-            )}
+      <div className="quick-actions">
+        <h2>Quick Actions</h2>
+        <div className="action-grid">
+          <Link to="/admin/products/new" className="action-card">
+            <span className="action-icon">➕</span>
+            <h3>Add Product</h3>
+          </Link>
+          <Link to="/admin/orders" className="action-card">
+            <span className="action-icon">📋</span>
+            <h3>Manage Orders</h3>
+          </Link>
+          <Link to="/admin/analytics" className="action-card">
+            <span className="action-icon">📊</span>
+            <h3>View Analytics</h3>
+          </Link>
+          <Link to="/admin/stock" className="action-card">
+            <span className="action-icon">🏷️</span>
+            <h3>Stock Control</h3>
+          </Link>
+        </div>
+      </div>
 
-            {/* Quick Actions */}
-            <div className="quick-actions">
-              <h2>Quick Actions</h2>
-              <div className="action-grid">
-                <Link to="/admin/products/new" className="action-card">
-                  <span className="action-icon">➕</span>
-                  <h3>Add Product</h3>
-                </Link>
-                <Link to="/admin/orders" className="action-card">
-                  <span className="action-icon">📋</span>
-                  <h3>View Orders</h3>
-                </Link>
-                <Link to="/admin/users" className="action-card">
-                  <span className="action-icon">👤</span>
-                  <h3>Manage Users</h3>
-                </Link>
-                <Link to="/admin/analytics" className="action-card">
-                  <span className="action-icon">📊</span>
-                  <h3>View Analytics</h3>
-                </Link>
-              </div>
-            </div>
+      <div className="recent-orders-section">
+        <div className="section-header">
+          <h2>Recent Orders</h2>
+          <Link to="/admin/orders" className="btn btn-secondary btn-sm">
+            View All
+          </Link>
+        </div>
 
-            {/* Recent Orders */}
-            <div className="recent-orders-section">
-              <div className="section-header">
-                <h2>Recent Orders</h2>
-                <Link to="/admin/orders" className="btn btn-secondary btn-sm">
-                  View All
-                </Link>
-              </div>
-              <div className="recent-orders-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Order #</th>
-                      <th>Customer</th>
-                      <th>Amount</th>
-                      <th>Status</th>
-                      <th>Date</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats?.recentOrders?.map(order => (
-                      <tr key={order._id}>
-                        <td>{order.orderNumber}</td>
-                        <td>{order.user?.name || 'N/A'}</td>
-                        <td>{formatPrice(order.totalAmount)}</td>
-                        <td>
-                          <span className={`status-badge status-${order.status}`}>
-                            {order.status}
-                          </span>
-                        </td>
-                        <td>
-                          {new Date(order.createdAt).toLocaleDateString('en-IN')}
-                        </td>
-                        <td>
-                          <Link
-                            to={`/admin/orders/${order._id}`}
-                            className="btn btn-sm"
-                          >
-                            View
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
+        {recentOrders.length === 0 ? (
+          <div className="empty-state">
+            <p>No recent orders.</p>
+          </div>
+        ) : (
+          <div className="recent-orders-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Order #</th>
+                  <th>Customer</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentOrders.map((order) => (
+                  <tr key={order._id}>
+                    <td>{order.orderNumber}</td>
+                    <td>{order.user?.name || 'N/A'}</td>
+                    <td>{formatPrice(order.totalAmount)}</td>
+                    <td>
+                      <span className={`status-badge status-${order.status}`}>
+                        {order.status}
+                      </span>
+                    </td>
+                    <td>{new Date(order.createdAt).toLocaleDateString('en-IN')}</td>
+                    <td>
+                      <Link to={`/admin/orders/${order._id}`} className="btn btn-sm">
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-
-        {/* Nested Routes */}
-        <Outlet />
-      </main>
+      </div>
     </div>
-  )
-}
+  );
+};
 
-export default AdminDashboard
+export default AdminDashboard;

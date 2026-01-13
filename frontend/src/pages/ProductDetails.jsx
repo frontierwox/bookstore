@@ -5,7 +5,6 @@ import { productsApi } from '../services/products'
 import { cartApi } from '../services/cart'
 import { CartContext } from '../context/CartContext'
 import { AuthContext } from '../context/AuthContext'
-import './pages.css'
 
 const ProductDetails = () => {
   const { id } = useParams()
@@ -58,7 +57,18 @@ const ProductDetails = () => {
         selectedSize,
         selectedColor
       })
-      addToCart()
+
+      // Keep local cart badge in sync
+      addToCart(
+        {
+          _id: product._id,
+          name: product.name,
+          price: product.price,
+          discountPrice: product.discountedPrice || null
+        },
+        quantity
+      )
+
       alert('Product added to cart!')
     } catch (error) {
       console.error('Error adding to cart:', error)

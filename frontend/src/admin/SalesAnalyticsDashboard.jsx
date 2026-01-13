@@ -13,7 +13,7 @@ import {
   MdFilterList,
   MdDateRange
 } from 'react-icons/md'
-import { adminApi } from '../../services/admin'
+import { adminApi } from '../services/admin'
 import './AdminDashboards.css'
 
 const SalesAnalyticsDashboard = () => {

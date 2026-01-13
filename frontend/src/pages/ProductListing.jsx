@@ -3,12 +3,18 @@ import { useSearchParams } from 'react-router-dom'
 import ProductCard from '../components/ProductCard'
 import FilterSidebar from '../components/FilterSidebar'
 import { productsApi } from '../services/products'
-import './pages.css'
 
 const ProductListing = () => {
   const [searchParams] = useSearchParams()
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [filters, setFilters] = useState({
+    category: '',
+    minPrice: '',
+    maxPrice: '',
+    inStock: false,
+    sortBy: 'newest'
+  })
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 12,
@@ -25,18 +31,25 @@ const ProductListing = () => {
       try {
         const params = {
           page: pagination.page,
-          limit: pagination.limit
+          limit: pagination.limit,
+          sort: filters.sortBy
         }
 
-        if (categoryParam) params.category = categoryParam
+        const category = categoryParam || filters.category
+        if (category) params.category = category
         if (searchParam) params.search = searchParam
+        if (filters.minPrice) params.minPrice = filters.minPrice
+        if (filters.maxPrice) params.maxPrice = filters.maxPrice
+        if (filters.inStock) params.inStock = true
 
-        const data = await productsApi.getAllProducts(params)
+        const data = await productsApi.getProducts(params)
         setProducts(data.products || [])
+
         setPagination(prev => ({
           ...prev,
           ...data.pagination,
-          total: data.total
+          total: data.pagination?.total || 0,
+          totalPages: data.pagination?.totalPages || 0
         }))
       } catch (error) {
         console.error('Error fetching products:', error)
@@ -46,11 +59,11 @@ const ProductListing = () => {
     }
 
     fetchProducts()
-  }, [pagination.page, categoryParam, searchParam])
+  }, [pagination.page, categoryParam, searchParam, filters])
 
-  const handleFilterChange = (filters) => {
-    setProducts([])
-    // Implement filter logic
+  const handleFilterChange = (newFilters) => {
+    setFilters(newFilters)
+    setPagination(prev => ({ ...prev, page: 1 }))
   }
 
   const handlePageChange = (newPage) => {

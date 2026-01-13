@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import './components.css'
 
 const FilterSidebar = ({ onFilterChange }) => {
   const [filters, setFilters] = useState({

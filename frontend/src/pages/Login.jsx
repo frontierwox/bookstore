@@ -1,9 +1,7 @@
 import React, { useState, useContext } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { MdEmail, MdLock, MdPerson } from 'react-icons/md'
-import { authApi } from '../services/auth'
 import { AuthContext } from '../context/AuthContext'
-import './pages.css'
 
 const Login = () => {
   const navigate = useNavigate()
@@ -29,10 +27,12 @@ const Login = () => {
     setLoading(true)
 
     try {
-      const response = await authApi.login(formData)
-      login(response.token, response.user)
+      const result = await login(formData.email, formData.password)
+      if (!result.success) {
+        setError(result.error || 'Login failed. Please try again.')
+        return
+      }
 
-      // Redirect to the page user was trying to access, or home
       const from = location.state?.from?.pathname || '/'
       navigate(from, { replace: true })
     } catch (err) {

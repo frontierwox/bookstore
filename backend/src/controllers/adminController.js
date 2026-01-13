@@ -20,6 +20,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
 
   // Total products
   const totalProducts = await Product.countDocuments();
+  const productsWithDiscounts = await Product.countDocuments({ discountPercentage: { $gt: 0 } });
 
   // Recent orders
   const recentOrders = await Order.find()
@@ -47,6 +48,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
       totalOrders,
       totalUsers,
       totalProducts,
+      productsWithDiscounts,
       pendingOrders,
       lowStockProducts,
       todaysOrders

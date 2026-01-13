@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { MdOutlineVisibility, MdLocalShipping, MdCheckCircle, MdCancel } from 'react-icons/md'
 import { orderApi } from '../services/orders'
-import './pages.css'
 
 const OrderHistory = () => {
   const [orders, setOrders] = useState([])

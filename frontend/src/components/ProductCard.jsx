@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
-import { MdHeart, MdHeartOutline, MdShoppingCart } from 'react-icons/md'
-import './components.css'
+import { MdHeartOutline, MdShoppingCart } from 'react-icons/md'
 
 const ProductCard = ({ product }) => {
   const formatPrice = (price) => {
