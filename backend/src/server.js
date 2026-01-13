@@ -33,6 +33,7 @@ app.use(cors({
 }));
 app.options('*', cors());
 
+
 // Custom request logging middleware
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
