@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/database');
+const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 // Initialize express app
 const app = express();
@@ -40,13 +41,11 @@ app.use('/api/orders', require('./routes/orders'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/admin', require('./routes/admin'));
 
-// 404 handler
-app.use((req, res, next) => {
-  res.status(404).json({ message: 'Route not found' });
-});
+// 404 handler - must come after all routes
+app.use(notFound);
 
-// Error handling middleware
-app.use(require('./middleware/errorHandler'));
+// Error handling middleware - must be last
+app.use(errorHandler);
 
 // Start server
 const PORT = process.env.PORT || 5000;

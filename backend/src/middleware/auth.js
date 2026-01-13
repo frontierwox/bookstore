@@ -10,8 +10,7 @@ const verifyToken = async (req, res, next) => {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         success: false,
-        message: 'No token provided',
-        status: 'error'
+        message: 'No token provided'
       });
     }
 
@@ -20,8 +19,7 @@ const verifyToken = async (req, res, next) => {
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: 'No token provided',
-        status: 'error'
+        message: 'No token provided'
       });
     }
 
@@ -34,8 +32,7 @@ const verifyToken = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: 'User not found',
-        status: 'error'
+        message: 'User not found'
       });
     }
 
@@ -49,8 +46,7 @@ const verifyToken = async (req, res, next) => {
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
-        message: 'Token has expired',
-        status: 'error'
+        message: 'Token has expired'
       });
     }
 
@@ -58,16 +54,14 @@ const verifyToken = async (req, res, next) => {
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,
-        message: 'Invalid token',
-        status: 'error'
+        message: 'Invalid token'
       });
     }
 
     // Handle other errors
     return res.status(401).json({
       success: false,
-      message: 'Authentication failed',
-      status: 'error'
+      message: 'Authentication failed'
     });
   }
 };
@@ -86,8 +80,7 @@ const verifyAdmin = async (req, res, next) => {
     // Return 403 if not admin
     return res.status(403).json({
       success: false,
-      message: 'Admin access required',
-      status: 'error'
+      message: 'Admin access required'
     });
   });
 };
@@ -106,8 +99,7 @@ const verifyCustomer = async (req, res, next) => {
     // Return 403 if not customer
     return res.status(403).json({
       success: false,
-      message: 'Customer access required',
-      status: 'error'
+      message: 'Customer access required'
     });
   });
 };
