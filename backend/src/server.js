@@ -67,19 +67,6 @@ app.use(notFound);
 app.use(errorHandler);
 
 // Start server
-const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
-  console.log(`
-╔══════════════════════════════════════════════════════════╗
-║                                                          ║
-║     🛍️  Saree E-Commerce API Server                    ║
-║                                                          ║
-║     Server running on: http://localhost:${PORT}         ║
-║     Environment: ${process.env.NODE_ENV || 'development'}                       ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-  `);
-});
 
 // Graceful shutdown handling
 process.on('unhandledRejection', (err) => {
