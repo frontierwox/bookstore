@@ -5,11 +5,14 @@ const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { TOKEN_EXPIRY } = require('../config/constants');
 
 // Generate JWT Token
-const generateToken = (userId) => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
-    expiresIn: TOKEN_EXPIRY.ACCESS
-  });
+const generateToken = (user) => {
+  return jwt.sign(
+    { id: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: TOKEN_EXPIRY.ACCESS }
+  );
 };
+
 
 // @desc    Register a new user
 // @route   POST /api/auth/register
@@ -37,7 +40,7 @@ exports.register = asyncHandler(async (req, res) => {
   });
 
   // Generate token
-  const token = generateToken(user._id);
+  const token = generateToken(user);
 
   res.status(201).json({
     success: true,
@@ -51,35 +54,55 @@ exports.register = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/login
 // @access  Public
 exports.login = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
-
   const { email, password } = req.body;
 
-  // Check if user exists
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email }).select('+password +role');
   if (!user) {
     throw new AppError(401, 'Invalid email or password');
   }
 
-  // Check password
-  const isPasswordValid = await user.comparePassword(password);
-  if (!isPasswordValid) {
+  const isMatch = await user.comparePassword(password);
+
+  if (!isMatch) {
     throw new AppError(401, 'Invalid email or password');
   }
 
-  // Generate token
-  const token = generateToken(user._id);
+  const token = generateToken(user);
 
   res.json({
     success: true,
-    message: 'Login successful',
     token,
-    user
+    user: {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role
+    }
   });
 });
+
+exports.adminLogin = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
+
+  const admin = await User.findOne({ email, role: 'admin' }).select('+password');
+  if (!admin) {
+    throw new AppError(401, 'Invalid admin credentials');
+  }
+
+  const isMatch = await admin.comparePassword(password);
+  if (!isMatch) {
+    throw new AppError(401, 'Invalid admin credentials');
+  }
+
+  const token = generateToken(admin);
+
+  res.json({
+    success: true,
+    token,
+    user: admin
+  });
+});
+
 
 // @desc    Logout user
 // @route   POST /api/auth/logout
@@ -97,7 +120,7 @@ exports.logout = asyncHandler(async (req, res) => {
 // @route   GET /api/auth/me
 // @access  Private
 exports.getCurrentUser = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id);
+  const user = await User.findById(req.user.id);
   res.json({
     success: true,
     user
@@ -116,7 +139,7 @@ exports.updateProfile = asyncHandler(async (req, res) => {
   const { name, phone } = req.body;
 
   const user = await User.findByIdAndUpdate(
-    req.user._id,
+    req.user.id,
     { name, phone },
     { new: true, runValidators: true }
   );
@@ -139,7 +162,7 @@ exports.changePassword = asyncHandler(async (req, res) => {
 
   const { currentPassword, newPassword } = req.body;
 
-  const user = await User.findById(req.user._id);
+  const user = await User.findById(req.user.id);
 
   // Check current password
   const isPasswordValid = await user.comparePassword(currentPassword);
@@ -152,7 +175,7 @@ exports.changePassword = asyncHandler(async (req, res) => {
   await user.save();
 
   // Generate new token
-  const token = generateToken(user._id);
+  const token = generateToken(user);
 
   res.json({
     success: true,
@@ -165,7 +188,7 @@ exports.changePassword = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/address
 // @access  Private
 exports.addAddress = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id);
+  const user = await User.findById(req.user.id);
 
   user.addresses.push(req.body);
   await user.save();
@@ -181,7 +204,7 @@ exports.addAddress = asyncHandler(async (req, res) => {
 // @route   PUT /api/auth/address/:addressId
 // @access  Private
 exports.updateAddress = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id);
+  const user = await User.findById(req.user.id);
 
   const address = user.addresses.id(req.params.addressId);
   if (!address) {
@@ -202,7 +225,7 @@ exports.updateAddress = asyncHandler(async (req, res) => {
 // @route   DELETE /api/auth/address/:addressId
 // @access  Private
 exports.deleteAddress = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id);
+  const user = await User.findById(req.user.id);
 
   const address = user.addresses.id(req.params.addressId);
   if (!address) {
@@ -223,7 +246,7 @@ exports.deleteAddress = asyncHandler(async (req, res) => {
 // @route   PUT /api/auth/address/:addressId/default
 // @access  Private
 exports.setDefaultAddress = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id);
+  const user = await User.findById(req.user.id);
 
   // Unset all default addresses
   user.addresses.forEach(addr => addr.isDefault = false);

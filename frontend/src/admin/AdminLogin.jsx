@@ -1,6 +1,6 @@
 import { useState, useContext } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { AuthContext } from '../context/AuthContext';
+import { AdminAuthContext } from '../context/AdminAuthContext';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -8,7 +8,7 @@ const AdminLogin = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { login } = useContext(AuthContext);
+  const { adminLogin } = useContext(AdminAuthContext);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -17,10 +17,10 @@ const AdminLogin = () => {
     setLoading(true);
     setError('');
 
-    const result = await login(email, password);
+    const result = await adminLogin(email, password);
 
     if (!result.success) {
-      setError(result.error || 'Invalid credentials or not authorized.');
+      setError(result.error || 'Invalid  admin credentials or not authorized.');
       setLoading(false);
       return;
     }

@@ -22,25 +22,32 @@ const Login = () => {
   }
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+  e.preventDefault();
+  setError('');
+  setLoading(true);
 
-    try {
-      const result = await login(formData.email, formData.password)
-      if (!result.success) {
-        setError(result.error || 'Login failed. Please try again.')
-        return
-      }
+  try {
+    const result = await login(formData.email, formData.password);
 
-      const from = location.state?.from?.pathname || '/'
-      navigate(from, { replace: true })
-    } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.')
-    } finally {
-      setLoading(false)
+    if (!result.success) {
+      setError(result.error || 'Login failed. Please try again.');
+      return;
     }
+
+    const role = result.user?.role;
+
+    if (role === 'admin') {
+      navigate('/admin/dashboard', { replace: true });
+    } else {
+      const from = location.state?.from?.pathname || '/';
+      navigate(from, { replace: true });
+    }
+  } catch (err) {
+    setError(err.response?.data?.message || 'Login failed. Please try again.');
+  } finally {
+    setLoading(false);
   }
+};
 
   return (
     <div className="auth-page">

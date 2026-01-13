@@ -8,22 +8,25 @@ export const AdminAuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
 
   const adminLogin = useCallback(async (email, password) => {
-    setLoading(true);
-    try {
-      // API call logic would go here
-      // const response = await api.post('/admin/login', { email, password });
-      // const { token, user } = response.data;
-      // setAdminToken(token);
-      // setAdminUser(user);
-      // localStorage.setItem('adminToken', token);
-      return { success: true };
-    } catch (error) {
-      console.error('Admin login error:', error);
-      return { success: false, error: error.message };
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  setLoading(true);
+  try {
+    const response = await api.post('/admin/login', { email, password });
+    const { token, user } = response.data;
+
+    setAdminToken(token);
+    setAdminUser(user);
+    localStorage.setItem('adminToken', token);
+
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.response?.data?.message || 'Admin login failed'
+    };
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   const adminLogout = useCallback(() => {
     setAdminUser(null);

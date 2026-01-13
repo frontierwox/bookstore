@@ -6,6 +6,13 @@ const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { SHIPPING, TAX_RATE } = require('../config/constants');
 const { sendOrderConfirmation, sendOrderShipped, sendOrderDelivered, sendAdminNotification } = require('../utils/emailService');
 
+
+const generateOrderNumber = () => {
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const random = Math.random().toString(36).substring(2, 7).toUpperCase();
+  return `SR${timestamp}${random}`;
+};
+
 // @desc    Create new order
 // @route   POST /api/orders/create
 // @access  Private
@@ -78,6 +85,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const initialStatus = paymentMethod === 'cod' ? 'confirmed' : 'pending';
 
   const order = await Order.create({
+    orderNumber: generateOrderNumber(),
     user: req.user._id,
     customerEmail: req.user.email,
     customerPhone: req.user.phone || shippingAddress.phone,

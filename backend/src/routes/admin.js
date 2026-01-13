@@ -1,5 +1,7 @@
 const express = require('express');
+const { adminLogin } = require('../controllers/authController');
 const router = express.Router();
+const User = require('../models/User');
 const {
   getDashboardStats: getAdminDashboardStats,
   getAllUsers,
@@ -50,6 +52,7 @@ const upload = multer({
   },
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB
 });
+router.post('/login', adminLogin);
 
 // All routes protected + admin only
 router.use(verifyToken, verifyAdmin);  // Middleware for all routes below

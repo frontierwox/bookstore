@@ -214,7 +214,7 @@ exports.createProduct = asyncHandler(async (req, res) => {
 
   const product = await Product.create({
     ...req.body,
-    createdBy: req.user._id
+    createdBy: req.user.id
   });
 
   res.status(201).json({
