@@ -40,9 +40,8 @@ const { verifyToken, verifyAdmin } = require('../middleware/auth');
 const { validateProductInput } = require('../middleware/validation');
 const multer = require('multer');
 
-// File upload setup
-const upload = multer({ 
-  dest: 'uploads/',
+const upload = multer({
+  storage: multer.memoryStorage(), // ✅ NO filesystem usage
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
@@ -50,8 +49,11 @@ const upload = multer({
       cb(new Error('Only image files allowed'), false);
     }
   },
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB
+  }
 });
+
 router.post('/login', adminLogin);
 
 // All routes protected + admin only
