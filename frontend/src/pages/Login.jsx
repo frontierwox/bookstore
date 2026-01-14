@@ -1,124 +1,192 @@
 import React, { useState, useContext } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { MdEmail, MdLock, MdPerson } from 'react-icons/md'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Mail, Lock, User, ArrowRight, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { AuthContext } from '../context/AuthContext'
 
 const Login = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { login } = useContext(AuthContext)
-  const [formData, setFormData] = useState({
-    email: '',
-    password: ''
-  })
+  
+  const [formData, setFormData] = useState({ email: '', password: '' })
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    })
+    setFormData({ ...formData, [e.target.name]: e.target.value })
+    // Clear error when user starts typing again
+    if (error) setError('')
   }
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  setError('');
-  setLoading(true);
+    e.preventDefault()
+    setError('')
+    setLoading(true)
 
-  try {
-    const result = await login(formData.email, formData.password);
+    try {
+      // Simulate minimum loading time for better UX perception (optional)
+      // await new Promise(resolve => setTimeout(resolve, 800)) 
+      
+      const result = await login(formData.email, formData.password)
 
-    if (!result.success) {
-      setError(result.error || 'Login failed. Please try again.');
-      return;
+      if (!result.success) {
+        setError(result.error || 'Login failed. Please try again.')
+        setLoading(false) // Stop loading on manual error handling
+        return
+      }
+
+      const role = result.user?.role
+      if (role === 'admin') {
+        navigate('/admin/dashboard', { replace: true })
+      } else {
+        const from = location.state?.from?.pathname || '/'
+        navigate(from, { replace: true })
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Login failed. Please try again.')
+    } finally {
+      // Only stop loading if we haven't navigated away (though component unmount handles this usually)
+      if (error) setLoading(false)
     }
-
-    const role = result.user?.role;
-
-    if (role === 'admin') {
-      navigate('/admin/dashboard', { replace: true });
-    } else {
-      const from = location.state?.from?.pathname || '/';
-      navigate(from, { replace: true });
-    }
-  } catch (err) {
-    setError(err.response?.data?.message || 'Login failed. Please try again.');
-  } finally {
-    setLoading(false);
   }
-};
 
   return (
-    <div className="auth-page">
-      <div className="auth-container">
-        <div className="auth-header">
-          <MdPerson size={64} />
-          <h1>Welcome Back</h1>
-          <p>Login to your account</p>
+    <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 relative overflow-hidden">
+      
+      {/* Background Decorative Blobs - Subtle Luxury Feel */}
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-rose-200/30 rounded-full blur-3xl" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-slate-200/30 rounded-full blur-3xl" />
+
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="w-full max-w-md bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden relative z-10"
+      >
+        {/* Header Section */}
+        <div className="px-8 pt-10 pb-6 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-rose-50 text-rose-600 mb-6">
+            <User size={32} strokeWidth={1.5} />
+          </div>
+          <h1 className="text-3xl font-serif text-slate-900 mb-2">Welcome Back</h1>
+          <p className="text-slate-500 text-sm">Please sign in to access your account</p>
         </div>
 
-        {error && <div className="alert alert-error">{error}</div>}
+        {/* Form Section */}
+        <div className="px-8 pb-10">
+          <AnimatePresence mode='wait'>
+            {error && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-6 p-4 rounded-xl bg-red-50 border border-red-100 flex items-start gap-3 text-red-700 text-sm"
+              >
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <p>{error}</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        <form onSubmit={handleSubmit} className="auth-form">
-          <div className="form-group">
-            <label htmlFor="email">
-              <MdEmail size={20} />
-              Email Address
-            </label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              placeholder="Enter your email"
-              required
-            />
-          </div>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Email Field */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 pl-1" htmlFor="email">
+                Email Address
+              </label>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-rose-600 transition-colors">
+                  <Mail size={20} />
+                </div>
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 transition-all outline-none text-slate-900 placeholder:text-slate-400"
+                  placeholder="name@example.com"
+                  required
+                />
+              </div>
+            </div>
 
-          <div className="form-group">
-            <label htmlFor="password">
-              <MdLock size={20} />
-              Password
-            </label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              placeholder="Enter your password"
-              required
-            />
-          </div>
+            {/* Password Field */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center pl-1">
+                <label className="text-xs font-semibold uppercase tracking-wider text-slate-500" htmlFor="password">
+                  Password
+                </label>
+                <Link to="/forgot-password" className="text-xs text-rose-600 hover:text-rose-700 font-medium transition-colors">
+                  Forgot Password?
+                </Link>
+              </div>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-rose-600 transition-colors">
+                  <Lock size={20} />
+                </div>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  id="password"
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  className="w-full pl-11 pr-12 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 transition-all outline-none text-slate-900 placeholder:text-slate-400"
+                  placeholder="••••••••"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+            </div>
 
-          <div className="form-actions">
-            <label className="checkbox-label">
-              <input type="checkbox" name="remember" />
-              <span>Remember me</span>
-            </label>
-            <Link to="/forgot-password" className="forgot-password">
-              Forgot Password?
+            {/* Remember Me Checkbox */}
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="remember"
+                name="remember"
+                className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/30 cursor-pointer"
+              />
+              <label htmlFor="remember" className="ml-2 text-sm text-slate-600 cursor-pointer select-none">
+                Remember me for 30 days
+              </label>
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex items-center justify-center py-4 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium transition-all shadow-lg shadow-slate-900/20 hover:shadow-xl hover:translate-y-[-1px] disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
+            >
+              {loading ? (
+                <Loader2 className="animate-spin w-5 h-5" />
+              ) : (
+                <>
+                  Sign In <ArrowRight className="ml-2 w-5 h-5" />
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+
+        {/* Footer */}
+        <div className="bg-slate-50 p-6 text-center border-t border-slate-100">
+          <p className="text-slate-600 text-sm">
+            Don't have an account yet?{' '}
+            <Link to="/register" className="font-semibold text-rose-600 hover:text-rose-800 transition-colors">
+              Create Account
             </Link>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn btn-primary btn-lg btn-block"
-          >
-            {loading ? 'Logging in...' : 'Login'}
-          </button>
-        </form>
-
-        <div className="auth-footer">
-          <p>Don't have an account?</p>
-          <Link to="/register" className="btn btn-secondary">
-            Register
-          </Link>
+          </p>
         </div>
-      </div>
+      </motion.div>
     </div>
   )
 }

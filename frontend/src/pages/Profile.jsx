@@ -1,81 +1,276 @@
-import React, { useState } from 'react';
+import React, { useState, useContext, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { 
+  User, Mail, Phone, Camera, Save, Loader2, 
+  Package, MapPin, LogOut, ChevronRight, CheckCircle 
+} from 'lucide-react'
+import { AuthContext } from '../context/AuthContext'
+import { authApi } from '../services/auth' // Assuming you have an update profile endpoint
 
 const Profile = () => {
-  const [userData, setUserData] = useState({
+  const { user, logout } = useContext(AuthContext)
+  const [loading, setLoading] = useState(false)
+  const [success, setSuccess] = useState('')
+  const [activeTab, setActiveTab] = useState('profile') // 'profile', 'orders', 'addresses'
+
+  const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     email: '',
     phone: '',
-  });
+  })
+
+  // Load user data on mount
+  useEffect(() => {
+    if (user) {
+      // Split name if stored as single string, or use directly
+      const nameParts = user.name ? user.name.split(' ') : ['', '']
+      setFormData({
+        firstName: nameParts[0] || '',
+        lastName: nameParts.slice(1).join(' ') || '',
+        email: user.email || '',
+        phone: user.phone || ''
+      })
+    }
+  }, [user])
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setUserData(prev => ({ ...prev, [name]: value }));
-  };
+    const { name, value } = e.target
+    setFormData(prev => ({ ...prev, [name]: value }))
+    if (success) setSuccess('') // Clear success message on edit
+  }
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    console.log('Updating profile:', userData);
-  };
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      // Simulate API call
+      // await authApi.updateProfile({ name: `${formData.firstName} ${formData.lastName}`, ... })
+      await new Promise(resolve => setTimeout(resolve, 1000)) // Fake delay
+      
+      setSuccess('Profile updated successfully')
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (error) {
+      console.error('Update failed', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Navigation Items
+  const navItems = [
+    { id: 'profile', label: 'My Profile', icon: <User size={20} /> },
+    { id: 'orders', label: 'My Orders', icon: <Package size={20} /> },
+    { id: 'addresses', label: 'Addresses', icon: <MapPin size={20} /> },
+  ]
 
   return (
-    <div className="container py-5">
-      <div className="row justify-content-center">
-        <div className="col-md-8">
-          <div className="card shadow-sm">
-            <div className="card-body">
-              <h2 className="mb-4">My Profile</h2>
-              <form onSubmit={handleSubmit}>
-                <div className="row mb-3">
-                  <div className="col-md-6">
-                    <label className="form-label">First Name</label>
-                    <input
-                      type="text"
-                      name="firstName"
-                      className="form-control"
-                      value={userData.firstName}
-                      onChange={handleChange}
-                    />
-                  </div>
-                  <div className="col-md-6">
-                    <label className="form-label">Last Name</label>
-                    <input
-                      type="text"
-                      name="lastName"
-                      className="form-control"
-                      value={userData.lastName}
-                      onChange={handleChange}
-                    />
-                  </div>
+    <div className="min-h-screen bg-stone-50 py-8 px-4 md:px-8">
+      <div className="max-w-6xl mx-auto">
+        
+        {/* Page Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-serif text-slate-900">Account Settings</h1>
+          <p className="text-slate-500">Manage your personal details and orders</p>
+        </div>
+
+        <div className="flex flex-col lg:flex-row gap-8">
+          
+          {/* Sidebar Navigation */}
+          <aside className="w-full lg:w-64 flex-shrink-0">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden sticky top-24">
+              
+              {/* User Mini-Profile in Sidebar */}
+              <div className="p-6 border-b border-slate-100 flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-serif text-xl font-bold">
+                  {formData.firstName?.[0]}
                 </div>
-                <div className="mb-3">
-                  <label className="form-label">Email</label>
-                  <input
-                    type="email"
-                    name="email"
-                    className="form-control"
-                    value={userData.email}
-                    onChange={handleChange}
-                  />
+                <div className="overflow-hidden">
+                  <p className="font-medium text-slate-900 truncate">{formData.firstName} {formData.lastName}</p>
+                  <p className="text-xs text-slate-500 truncate">{formData.email}</p>
                 </div>
-                <div className="mb-3">
-                  <label className="form-label">Phone</label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    className="form-control"
-                    value={userData.phone}
-                    onChange={handleChange}
-                  />
-                </div>
-                <button type="submit" className="btn btn-primary">Save Changes</button>
-              </form>
+              </div>
+
+              {/* Navigation Links */}
+              <nav className="p-2 space-y-1">
+                {navItems.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
+                      activeTab === item.id 
+                        ? 'bg-slate-900 text-white shadow-md' 
+                        : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {item.icon}
+                      <span className="font-medium">{item.label}</span>
+                    </div>
+                    {activeTab === item.id && <ChevronRight size={16} />}
+                  </button>
+                ))}
+              </nav>
+
+              <div className="p-2 border-t border-slate-100 mt-2">
+                <button 
+                  onClick={logout}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <LogOut size={20} />
+                  <span className="font-medium">Sign Out</span>
+                </button>
+              </div>
             </div>
-          </div>
+          </aside>
+
+          {/* Main Content Area */}
+          <main className="flex-1">
+            <AnimatePresence mode='wait'>
+              {activeTab === 'profile' && (
+                <motion.div
+                  key="profile"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3 }}
+                  className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 md:p-10"
+                >
+                  <div className="flex items-center justify-between mb-8">
+                    <h2 className="text-xl font-serif text-slate-900">Personal Information</h2>
+                    {success && (
+                      <motion.div 
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="flex items-center gap-2 text-emerald-600 text-sm font-medium bg-emerald-50 px-3 py-1 rounded-full"
+                      >
+                        <CheckCircle size={14} /> {success}
+                      </motion.div>
+                    )}
+                  </div>
+
+                  {/* Avatar Upload Section */}
+                  <div className="flex items-center gap-6 mb-8 pb-8 border-b border-slate-100">
+                    <div className="relative">
+                      <div className="w-24 h-24 rounded-full bg-slate-100 border-4 border-white shadow-md flex items-center justify-center text-3xl font-serif text-slate-400">
+                         {formData.firstName?.[0]}
+                      </div>
+                      <button className="absolute bottom-0 right-0 p-2 bg-slate-900 text-white rounded-full hover:bg-rose-600 transition-colors shadow-sm">
+                        <Camera size={16} />
+                      </button>
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-slate-900">Profile Photo</h3>
+                      <p className="text-sm text-slate-500 mt-1">Accepts JPG, GIF or PNG. Max size of 800K</p>
+                    </div>
+                  </div>
+
+                  {/* Edit Form */}
+                  <form onSubmit={handleSubmit} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <InputGroup 
+                        label="First Name" 
+                        name="firstName" 
+                        value={formData.firstName} 
+                        onChange={handleChange} 
+                        icon={<User size={18} />} 
+                      />
+                      <InputGroup 
+                        label="Last Name" 
+                        name="lastName" 
+                        value={formData.lastName} 
+                        onChange={handleChange} 
+                        icon={<User size={18} />} 
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <InputGroup 
+                        label="Email Address" 
+                        name="email" 
+                        type="email" 
+                        value={formData.email} 
+                        onChange={handleChange} 
+                        icon={<Mail size={18} />} 
+                        disabled 
+                      />
+                      <InputGroup 
+                        label="Phone Number" 
+                        name="phone" 
+                        type="tel" 
+                        value={formData.phone} 
+                        onChange={handleChange} 
+                        icon={<Phone size={18} />} 
+                      />
+                    </div>
+
+                    <div className="pt-4 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="flex items-center gap-2 px-8 py-3 bg-slate-900 hover:bg-rose-700 text-white rounded-xl font-medium transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed"
+                      >
+                        {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <Save size={18} />}
+                        Save Changes
+                      </button>
+                    </div>
+                  </form>
+                </motion.div>
+              )}
+
+              {activeTab === 'orders' && (
+                 <motion.div 
+                    key="orders"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white rounded-2xl shadow-sm border border-slate-100 p-10 flex flex-col items-center justify-center text-center min-h-[400px]"
+                 >
+                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                        <Package size={32} className="text-slate-300" />
+                    </div>
+                    <h3 className="text-lg font-medium text-slate-900">No Orders Yet</h3>
+                    <p className="text-slate-500 mt-2 max-w-sm">When you place orders, they will appear here for you to track.</p>
+                 </motion.div>
+              )}
+
+                {activeTab === 'addresses' && (
+                 <motion.div 
+                    key="addresses"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white rounded-2xl shadow-sm border border-slate-100 p-10 flex flex-col items-center justify-center text-center min-h-[400px]"
+                 >
+                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                        <MapPin size={32} className="text-slate-300" />
+                    </div>
+                    <h3 className="text-lg font-medium text-slate-900">No Saved Addresses</h3>
+                    <p className="text-slate-500 mt-2 max-w-sm">Save shipping addresses at checkout for faster delivery.</p>
+                 </motion.div>
+              )}
+            </AnimatePresence>
+          </main>
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Profile;
+// Reusable Input Component with consistent styling
+const InputGroup = ({ label, icon, disabled, ...props }) => (
+  <div className="space-y-1.5">
+    <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 pl-1">{label}</label>
+    <div className={`relative group ${disabled ? 'opacity-75' : ''}`}>
+      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-rose-600 transition-colors">
+        {icon}
+      </div>
+      <input
+        {...props}
+        disabled={disabled}
+        className={`w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl transition-all outline-none text-slate-900 
+          ${disabled ? 'cursor-not-allowed bg-slate-100' : 'focus:bg-white focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10'}`}
+      />
+    </div>
+  </div>
+)
+
+export default Profile

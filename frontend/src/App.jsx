@@ -20,6 +20,7 @@ import AdminLogin from './admin/AdminLogin';
 import NotFound from './pages/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
+import "./index.css";
 
 // Admin components
 import AdminLayout from './admin/AdminLayout';
