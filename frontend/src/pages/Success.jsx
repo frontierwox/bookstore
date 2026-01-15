@@ -93,14 +93,6 @@ const Success = () => {
               </div>
             </div>
 
-            {/* Delivery Date Row */}
-            <div className="flex items-start gap-3">
-              <Calendar className="w-5 h-5 text-rose-600 mt-0.5" />
-              <div>
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Estimated Delivery</span>
-                <span className="text-slate-900 font-medium">{formattedDate}</span>
-              </div>
-            </div>
           </div>
         )}
 

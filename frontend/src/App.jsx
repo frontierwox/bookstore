@@ -16,7 +16,6 @@ import OrderDetails from './pages/OrderDetails';
 import Profile from './pages/Profile';
 import Success from './pages/Success';
 import AdminDashboard from './pages/AdminDashboard';
-import AdminLogin from './admin/AdminLogin';
 import NotFound from './pages/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -100,7 +99,7 @@ function App() {
                     />
 
                     {/* Admin Routes */}
-                    <Route path="/admin/login" element={<AdminLogin />} />
+                    <Route path="/login" element={<Login />} />
                     
                     {/* Admin protected routes with layout */}
                     <Route

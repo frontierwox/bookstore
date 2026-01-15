@@ -4,15 +4,16 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Trash2, Plus, Minus, ShoppingBag, ArrowRight, ShieldCheck, Lock, AlertCircle, Loader2, ArrowLeft } from 'lucide-react'
 import { cartApi } from '../services/cart'
 import { AuthContext } from '../context/AuthContext'
-// We will define the stylized Summary inside this file or strictly control its container
 import CartSummary from '../components/CartSummary' 
+import toast from 'react-hot-toast' // Recommended for better UX
 
 const Cart = () => {
   const navigate = useNavigate()
   const { user } = useContext(AuthContext)
   const [cart, setCart] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [updatingId, setUpdatingId] = useState(null) // Track which item is updating
+  const [updatingId, setUpdatingId] = useState(null) 
+  const [removingId, setRemovingId] = useState(null)
 
   useEffect(() => {
     if (user) {
@@ -28,33 +29,52 @@ const Cart = () => {
       setCart(data.cart)
     } catch (error) {
       console.error('Error fetching cart:', error)
+      toast.error("Could not load cart")
     } finally {
       setLoading(false)
     }
   }
 
-  const handleQuantityChange = async (itemId, newQuantity) => {
+  const handleQuantityChange = async (item, newQuantity) => {
     if (newQuantity < 1) return
-    setUpdatingId(itemId)
+    
+    // Optimistic UI check: prevent spamming
+    if (updatingId) return;
+
+    setUpdatingId(item._id)
+    
     try {
-      await cartApi.updateCartItem(itemId, { quantity: newQuantity })
-      await fetchCart()
+      // Pass item._id (Cart Item ID) which matches our backend route expectation
+      const data = await cartApi.updateCartItem(item._id, { quantity: newQuantity })
+      
+      if (data.success) {
+        setCart(data.cart)
+      }
     } catch (error) {
       console.error('Error updating quantity:', error)
+      // Extract error message from backend if available
+      const msg = error.response?.data?.message || "Could not update quantity";
+      toast.error(msg)
     } finally {
       setUpdatingId(null)
     }
   }
 
   const handleRemoveItem = async (itemId) => {
-    // No confirm window - modern UX removes immediately with an "Undo" option (Undo logic is complex, so we stick to fast remove)
-    // Or we rely on the smooth animation to make it feel intentional.
+    if (removingId) return;
+    setRemovingId(itemId)
+
     try {
-      // Optimistic UI update could go here, but for safety we await
-      await cartApi.removeFromCart(itemId)
-      await fetchCart()
+      const data = await cartApi.removeFromCart(itemId)
+      if (data.success) {
+        setCart(data.cart)
+        toast.success("Item removed")
+      }
     } catch (error) {
       console.error('Error removing item:', error)
+      toast.error("Failed to remove item")
+    } finally {
+      setRemovingId(null)
     }
   }
 
@@ -62,7 +82,8 @@ const Cart = () => {
     if (window.confirm('Are you sure you want to remove all items?')) {
       try {
         await cartApi.clearCart()
-        await fetchCart()
+        setCart({ ...cart, items: [] })
+        toast.success("Cart cleared")
       } catch (error) {
         console.error('Error clearing cart:', error)
       }
@@ -82,7 +103,7 @@ const Cart = () => {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50">
         <Loader2 className="w-10 h-10 text-rose-600 animate-spin mb-4" />
-        <p className="text-slate-500 font-medium animate-pulse">Loading your selection...</p>
+        <p className="text-slate-500 font-medium animate-pulse">Loading your bag...</p>
       </div>
     )
   }
@@ -98,7 +119,7 @@ const Cart = () => {
         <p className="text-slate-500 max-w-md mb-8">
           Sign in to view your cart items and sync them across all your devices.
         </p>
-        <Link to="/login" className="btn-primary-luxury">
+        <Link to="/login" className="px-8 py-3 bg-slate-900 text-white rounded-full hover:bg-rose-700 transition-colors shadow-lg">
           Log In Now
         </Link>
       </div>
@@ -106,7 +127,7 @@ const Cart = () => {
   }
 
   // --- Empty Cart State ---
-  if (!cart || cart.items.length === 0) {
+  if (!cart || !cart.items || cart.items.length === 0) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50 p-4">
         <motion.div 
@@ -166,13 +187,15 @@ const Cart = () => {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.3 }}
-                  className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 group hover:border-rose-100 transition-colors"
+                  className={`bg-white rounded-2xl p-4 shadow-sm border transition-colors ${
+                    removingId === item._id ? 'border-red-200 bg-red-50' : 'border-slate-100 hover:border-rose-100'
+                  }`}
                 >
                   <div className="flex flex-col md:grid md:grid-cols-12 gap-4 items-center">
                     
                     {/* Product Info */}
                     <div className="w-full md:col-span-6 flex gap-4">
-                      <div className="w-24 h-32 shrink-0 rounded-lg overflow-hidden bg-slate-100">
+                      <div className="w-24 h-32 shrink-0 rounded-lg overflow-hidden bg-slate-100 relative">
                         {item.product?.images?.[0] ? (
                           <img 
                             src={item.product.images[0].url} 
@@ -182,10 +205,16 @@ const Cart = () => {
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-slate-300">No Image</div>
                         )}
+                        {/* Overlay when removing */}
+                        {removingId === item._id && (
+                           <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
+                              <Loader2 className="animate-spin text-red-500" />
+                           </div>
+                        )}
                       </div>
                       <div className="flex flex-col justify-between py-1">
                         <div>
-                          <Link to={`/products/${item.product?._id}`} className="font-serif text-lg text-slate-900 hover:text-rose-600 transition-colors">
+                          <Link to={`/products/${item.product?._id}`} className="font-serif text-lg text-slate-900 hover:text-rose-600 transition-colors line-clamp-1">
                             {item.product?.name}
                           </Link>
                           <div className="text-sm text-slate-500 mt-1 space-y-0.5">
@@ -204,19 +233,25 @@ const Cart = () => {
                       <span className="md:hidden text-sm text-slate-500">Qty:</span>
                       <div className="flex items-center bg-slate-50 rounded-lg p-1 border border-slate-200">
                         <button 
-                          onClick={() => handleQuantityChange(item._id, item.quantity - 1)}
-                          disabled={item.quantity <= 1 || updatingId === item._id}
+                          onClick={() => handleQuantityChange(item, item.quantity - 1)}
+                          disabled={item.quantity <= 1 || updatingId === item._id || removingId === item._id}
                           className="w-8 h-8 flex items-center justify-center rounded-md bg-white text-slate-600 shadow-sm hover:text-rose-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           <Minus size={14} />
                         </button>
+                        
                         <span className="w-10 text-center text-sm font-medium text-slate-900">
-                          {updatingId === item._id ? <Loader2 size={12} className="animate-spin mx-auto"/> : item.quantity}
+                          {updatingId === item._id ? (
+                            <Loader2 size={12} className="animate-spin mx-auto text-rose-600"/> 
+                          ) : (
+                            item.quantity
+                          )}
                         </span>
+                        
                         <button 
-                          onClick={() => handleQuantityChange(item._id, item.quantity + 1)}
-                          disabled={updatingId === item._id}
-                          className="w-8 h-8 flex items-center justify-center rounded-md bg-white text-slate-600 shadow-sm hover:text-rose-600 disabled:opacity-50 transition-colors"
+                          onClick={() => handleQuantityChange(item, item.quantity + 1)}
+                          disabled={updatingId === item._id || removingId === item._id}
+                          className="w-8 h-8 flex items-center justify-center rounded-md bg-white text-slate-600 shadow-sm hover:text-rose-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           <Plus size={14} />
                         </button>
@@ -239,10 +274,12 @@ const Cart = () => {
                       
                       <button 
                         onClick={() => handleRemoveItem(item._id)}
-                        className="flex items-center text-sm text-red-500 hover:text-red-700 mt-2 px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                        disabled={removingId === item._id}
+                        className="flex items-center text-sm text-red-500 hover:text-red-700 mt-2 px-2 py-1 rounded hover:bg-red-50 transition-colors disabled:opacity-50"
                       >
                         <Trash2 size={16} className="mr-1.5" />
-                        <span className="hidden md:inline">Remove</span>
+                        <span className="hidden md:inline">{removingId === item._id ? 'Removing...' : 'Remove'}</span>
+                        <span className="md:hidden">{removingId === item._id ? '...' : 'Remove'}</span>
                       </button>
                     </div>
 
@@ -252,7 +289,10 @@ const Cart = () => {
             </AnimatePresence>
 
             <div className="pt-4 flex justify-end">
-               <button onClick={handleClearCart} className="text-sm text-slate-400 hover:text-red-500 transition-colors underline decoration-slate-300 underline-offset-4">
+               <button 
+                  onClick={handleClearCart} 
+                  className="text-sm text-slate-400 hover:text-red-500 transition-colors underline decoration-slate-300 underline-offset-4"
+               >
                  Clear Shopping Bag
                </button>
             </div>

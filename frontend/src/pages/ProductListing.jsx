@@ -1,238 +1,297 @@
-import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import ProductCard from '../components/ProductCard'
 import FilterSidebar from '../components/FilterSidebar'
 import { productsApi } from '../services/products'
+import { FiFilter, FiGrid, FiList, FiX, FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 
 const ProductListing = () => {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  
+  // --- State ---
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState('grid')
-  const [showFilters, setShowFilters] = useState(false)
+  const [viewMode, setViewMode] = useState('grid') // 'grid' | 'list'
+  const [showMobileFilters, setShowMobileFilters] = useState(false)
+  
+  // Initial state derived from URL to support sharing/refreshing
   const [filters, setFilters] = useState({
-    category: '',
-    minPrice: '',
-    maxPrice: '',
-    inStock: false,
-    sortBy: 'newest'
+    category: searchParams.get('category') || '',
+    search: searchParams.get('search') || '',
+    minPrice: searchParams.get('minPrice') || '',
+    maxPrice: searchParams.get('maxPrice') || '',
+    colors: searchParams.get('colors') ? searchParams.get('colors').split(',') : [],
+    sizes: searchParams.get('sizes') ? searchParams.get('sizes').split(',') : [],
+    inStock: searchParams.get('inStock') === 'true',
+    sortBy: searchParams.get('sortBy') || 'newest'
   })
+
   const [pagination, setPagination] = useState({
-    page: 1,
+    page: parseInt(searchParams.get('page')) || 1,
     limit: 12,
     total: 0,
     totalPages: 0
   })
 
-  const categoryParam = searchParams.get('category')
-  const searchParam = searchParams.get('search')
+  // --- Synchronization ---
+  
+  // Update URL when filters or page changes
+  useEffect(() => {
+    const params = {}
+    if (filters.category) params.category = filters.category
+    if (filters.search) params.search = filters.search
+    if (filters.minPrice) params.minPrice = filters.minPrice
+    if (filters.maxPrice) params.maxPrice = filters.maxPrice
+    if (filters.colors.length > 0) params.colors = filters.colors.join(',')
+    if (filters.sizes.length > 0) params.sizes = filters.sizes.join(',')
+    if (filters.inStock) params.inStock = 'true'
+    if (filters.sortBy !== 'newest') params.sortBy = filters.sortBy
+    if (pagination.page > 1) params.page = pagination.page.toString()
+
+    setSearchParams(params, { replace: true })
+  }, [filters, pagination.page, setSearchParams])
+
+  // --- Data Fetching ---
+  const fetchProducts = useCallback(async () => {
+    setLoading(true)
+    try {
+      const apiParams = {
+        page: pagination.page,
+        limit: pagination.limit,
+        sort: filters.sortBy,
+        category: filters.category,
+        search: filters.search,
+        minPrice: filters.minPrice,
+        maxPrice: filters.maxPrice,
+        inStock: filters.inStock,
+        colors: filters.colors.join(','), // Send as comma separated string
+        sizes: filters.sizes.join(',')
+      }
+
+      // Clean empty params
+      Object.keys(apiParams).forEach(key => {
+        if (apiParams[key] === '' || apiParams[key] === null || apiParams[key] === undefined) {
+          delete apiParams[key]
+        }
+      })
+
+      const data = await productsApi.getProducts(apiParams)
+      setProducts(data.products || [])
+      setPagination(prev => ({
+        ...prev,
+        total: data.pagination?.total || 0,
+        totalPages: data.pagination?.totalPages || 0
+      }))
+    } catch (error) {
+      console.error('Error fetching products:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [filters, pagination.page, pagination.limit])
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      setLoading(true)
-      try {
-        const params = {
-          page: pagination.page,
-          limit: pagination.limit,
-          sort: filters.sortBy
-        }
-
-        const category = categoryParam || filters.category
-        if (category) params.category = category
-        if (searchParam) params.search = searchParam
-        if (filters.minPrice) params.minPrice = filters.minPrice
-        if (filters.maxPrice) params.maxPrice = filters.maxPrice
-        if (filters.inStock) params.inStock = true
-
-        const data = await productsApi.getProducts(params)
-        setProducts(data.products || [])
-
-        setPagination(prev => ({
-          ...prev,
-          ...data.pagination,
-          total: data.pagination?.total || 0,
-          totalPages: data.pagination?.totalPages || 0
-        }))
-      } catch (error) {
-        console.error('Error fetching products:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
     fetchProducts()
-  }, [pagination.page, categoryParam, searchParam, filters])
-
-  const handleFilterChange = (newFilters) => {
-    setFilters(newFilters)
-    setPagination(prev => ({ ...prev, page: 1 }))
-    setShowFilters(false) // Close mobile filter on apply
-  }
-
-  const handlePageChange = (newPage) => {
-    setPagination(prev => ({ ...prev, page: newPage }))
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [fetchProducts])
+
+  // --- Handlers ---
+
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => ({
+      ...prev,
+      [key]: value
+    }))
+    setPagination(prev => ({ ...prev, page: 1 })) // Reset page on filter change
   }
 
-  const clearFilters = () => {
+  // Specific handler for Array types (Colors, Sizes)
+  const toggleArrayFilter = (key, value) => {
+    setFilters(prev => {
+      const current = prev[key]
+      const updated = current.includes(value)
+        ? current.filter(item => item !== value)
+        : [...current, value]
+      
+      return { ...prev, [key]: updated }
+    })
+    setPagination(prev => ({ ...prev, page: 1 }))
+  }
+
+  const clearAllFilters = () => {
     setFilters({
       category: '',
+      search: '',
       minPrice: '',
       maxPrice: '',
+      colors: [],
+      sizes: [],
       inStock: false,
       sortBy: 'newest'
     })
     setPagination(prev => ({ ...prev, page: 1 }))
   }
 
+  const getActiveFilterCount = () => {
+    let count = 0
+    if (filters.category) count++
+    if (filters.minPrice || filters.maxPrice) count++
+    if (filters.inStock) count++
+    count += filters.colors.length
+    count += filters.sizes.length
+    return count
+  }
+
   return (
-    <div className="product-listing-page">
-      {/* Header Section */}
-      <div className="page-header">
+    <div className="listing-page">
+      {/* --- Sticky Header --- */}
+      <div className="sticky-header">
         <div className="container">
-          <div className="header-content">
-            <div className="title-section">
+          <div className="header-row">
+            
+            {/* Title & Count */}
+            <div className="header-info">
               <h1 className="page-title">
-                {categoryParam
-                  ? `${categoryParam.charAt(0).toUpperCase() + categoryParam.slice(1)} Sarees`
-                  : searchParam
-                  ? `Search Results for "${searchParam}"`
-                  : 'All Sarees'}
+                {filters.category 
+                  ? `${filters.category} Sarees` 
+                  : filters.search 
+                    ? `Results for "${filters.search}"`
+                    : 'Our Collection'}
               </h1>
-              <p className="product-count">{pagination.total} products found</p>
+              <span className="product-count">
+                {loading ? 'Loading...' : `${pagination.total} Items`}
+              </span>
             </div>
 
-            {/* Mobile/Tablet Controls */}
-            <div className="mobile-controls">
+            {/* Controls */}
+            <div className="header-controls">
+              
+              {/* Mobile Filter Toggle */}
               <button 
-                className="filter-toggle-btn"
-                onClick={() => setShowFilters(!showFilters)}
+                className="control-btn mobile-filter-btn"
+                onClick={() => setShowMobileFilters(true)}
               >
-                <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                </svg>
-                <span>Filters</span>
-                {(filters.category || filters.minPrice || filters.maxPrice || filters.inStock) && (
-                  <span className="filter-badge"></span>
-                )}
+                <FiFilter /> Filters
+                {getActiveFilterCount() > 0 && <span className="badge">{getActiveFilterCount()}</span>}
               </button>
 
+              {/* View Toggle (Desktop) */}
               <div className="view-toggle">
                 <button 
                   className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`}
                   onClick={() => setViewMode('grid')}
-                  aria-label="Grid view"
                 >
-                  <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                  </svg>
+                  <FiGrid />
                 </button>
                 <button 
                   className={`view-btn ${viewMode === 'list' ? 'active' : ''}`}
                   onClick={() => setViewMode('list')}
-                  aria-label="List view"
                 >
-                  <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
+                  <FiList />
                 </button>
               </div>
             </div>
-
-            {/* Sort Dropdown */}
-            <div className="sort-section">
-              <label htmlFor="sort" className="sort-label">Sort by:</label>
-              <select 
-                id="sort"
-                className="sort-select"
-                value={filters.sortBy}
-                onChange={(e) => handleFilterChange({ ...filters, sortBy: e.target.value })}
-              >
-                <option value="newest">Newest First</option>
-                <option value="price-low">Price: Low to High</option>
-                <option value="price-high">Price: High to Low</option>
-                <option value="popular">Most Popular</option>
-                <option value="rating">Highest Rated</option>
-              </select>
-            </div>
           </div>
 
-          {/* Active Filters Tags */}
-          {(filters.category || filters.minPrice || filters.maxPrice || filters.inStock) && (
-            <div className="active-filters">
-              <span className="filter-label">Active Filters:</span>
-              <div className="filter-tags">
-                {filters.category && (
-                  <span className="filter-tag">
-                    {filters.category}
-                    <button onClick={() => handleFilterChange({ ...filters, category: '' })}>×</button>
-                  </span>
-                )}
-                {filters.minPrice && (
-                  <span className="filter-tag">
-                    Min: ₹{filters.minPrice}
-                    <button onClick={() => handleFilterChange({ ...filters, minPrice: '' })}>×</button>
-                  </span>
-                )}
-                {filters.maxPrice && (
-                  <span className="filter-tag">
-                    Max: ₹{filters.maxPrice}
-                    <button onClick={() => handleFilterChange({ ...filters, maxPrice: '' })}>×</button>
-                  </span>
-                )}
-                {filters.inStock && (
-                  <span className="filter-tag">
-                    In Stock Only
-                    <button onClick={() => handleFilterChange({ ...filters, inStock: false })}>×</button>
-                  </span>
-                )}
-                <button className="clear-all-btn" onClick={clearFilters}>Clear All</button>
-              </div>
+          {/* Active Tags Bar */}
+          {getActiveFilterCount() > 0 && (
+            <div className="active-tags-row">
+              {filters.category && (
+                <div className="tag">
+                  {filters.category} <FiX onClick={() => handleFilterChange('category', '')} />
+                </div>
+              )}
+              {filters.colors.map(color => (
+                <div key={color} className="tag">
+                  <span className="color-dot" style={{ backgroundColor: color }}></span>
+                  {color} <FiX onClick={() => toggleArrayFilter('colors', color)} />
+                </div>
+              ))}
+              {(filters.minPrice || filters.maxPrice) && (
+                <div className="tag">
+                  ₹{filters.minPrice || 0} - ₹{filters.maxPrice || 'Any'} 
+                  <FiX onClick={() => { handleFilterChange('minPrice', ''); handleFilterChange('maxPrice', '') }} />
+                </div>
+              )}
+              {filters.inStock && (
+                <div className="tag">
+                  In Stock <FiX onClick={() => handleFilterChange('inStock', false)} />
+                </div>
+              )}
+              <button className="clear-text" onClick={clearAllFilters}>Clear All</button>
             </div>
           )}
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="listing-layout container">
-        {/* Mobile Filter Overlay */}
-        {showFilters && (
-          <div className="filter-overlay" onClick={() => setShowFilters(false)}></div>
-        )}
-
-        {/* Filter Sidebar */}
-        <aside className={`sidebar ${showFilters ? 'show' : ''}`}>
-          <div className="sidebar-header">
-            <h3 className="sidebar-title">Filters</h3>
-            <button 
-              className="close-btn"
-              onClick={() => setShowFilters(false)}
-            >
-              ×
-            </button>
-          </div>
-          <FilterSidebar onFilterChange={handleFilterChange} currentFilters={filters} />
+      <div className="main-layout container">
+        {/* --- Sidebar (Desktop) --- */}
+        <aside className="sidebar-desktop">
+          <FilterSidebar 
+            filters={filters} 
+            onFilterChange={handleFilterChange}
+            onToggleArray={toggleArrayFilter}
+          />
         </aside>
 
-        {/* Products Grid */}
-        <main className="products-container">
+        {/* --- Mobile Sidebar (Drawer) --- */}
+        <AnimatePresence>
+          {showMobileFilters && (
+            <>
+              <motion.div 
+                className="backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowMobileFilters(false)}
+              />
+              <motion.aside 
+                className="sidebar-mobile"
+                initial={{ x: '-100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '-100%' }}
+                transition={{ type: 'tween', duration: 0.3 }}
+              >
+                <div className="mobile-header">
+                  <h3>Filters</h3>
+                  <button onClick={() => setShowMobileFilters(false)}><FiX size={24} /></button>
+                </div>
+                <div className="mobile-content">
+                  <FilterSidebar 
+                    filters={filters} 
+                    onFilterChange={handleFilterChange}
+                    onToggleArray={toggleArrayFilter}
+                  />
+                </div>
+                <div className="mobile-footer">
+                  <button className="btn-reset" onClick={clearAllFilters}>Reset</button>
+                  <button className="btn-apply" onClick={() => setShowMobileFilters(false)}>
+                    Show {pagination.total} Results
+                  </button>
+                </div>
+              </motion.aside>
+            </>
+          )}
+        </AnimatePresence>
+
+        {/* --- Product Grid --- */}
+        <main className="product-area">
           {loading ? (
-            <div className="loading-container">
+            <div className="loader-area">
               <div className="spinner"></div>
-              <p className="loading-text">Loading products...</p>
+              <p>Curating collection...</p>
             </div>
           ) : products.length === 0 ? (
             <div className="empty-state">
-              <svg className="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-              </svg>
-              <h3 className="empty-title">No products found</h3>
-              <p className="empty-text">Try adjusting your filters or search terms</p>
-              <button className="btn btn-primary" onClick={clearFilters}>Clear Filters</button>
+              <div className="empty-icon">🔍</div>
+              <h3>No products found</h3>
+              <p>Try changing your filters or search for something else.</p>
+              <button onClick={clearAllFilters}>View All Products</button>
             </div>
           ) : (
             <>
-              <div className={`products-grid ${viewMode === 'list' ? 'list-view' : 'grid-view'}`}>
+              <div className={`products-grid ${viewMode}`}>
                 {products.map(product => (
                   <ProductCard key={product._id} product={product} viewMode={viewMode} />
                 ))}
@@ -241,37 +300,20 @@ const ProductListing = () => {
               {/* Pagination */}
               {pagination.totalPages > 1 && (
                 <div className="pagination">
-                  <button
-                    onClick={() => handlePageChange(pagination.page - 1)}
+                  <button 
                     disabled={pagination.page === 1}
-                    className="pagination-btn"
-                    aria-label="Previous page"
+                    onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
                   >
-                    <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                    <span className="btn-text">Previous</span>
+                    <FiChevronLeft /> Previous
                   </button>
-
-                  <div className="pagination-info">
-                    <span className="page-numbers">
-                      <span className="current-page">{pagination.page}</span>
-                      <span className="separator">/</span>
-                      <span className="total-pages">{pagination.totalPages}</span>
-                    </span>
-                    <span className="page-label">of {pagination.totalPages} pages</span>
-                  </div>
-
-                  <button
-                    onClick={() => handlePageChange(pagination.page + 1)}
+                  <span className="page-info">
+                    Page {pagination.page} of {pagination.totalPages}
+                  </span>
+                  <button 
                     disabled={pagination.page === pagination.totalPages}
-                    className="pagination-btn"
-                    aria-label="Next page"
+                    onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
                   >
-                    <span className="btn-text">Next</span>
-                    <svg className="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
+                    Next <FiChevronRight />
                   </button>
                 </div>
               )}
@@ -280,357 +322,300 @@ const ProductListing = () => {
         </main>
       </div>
 
-      <style jsx>{`
-        .product-listing-page {
-          min-height: 100vh;
-          background: #f8f9fa;
+      <style>{`
+        :root {
+          --primary: #e11d48; /* Rose-600 */
+          --bg-page: #f8fafc;
+          --border: #e2e8f0;
+          --text-main: #0f172a;
+          --text-muted: #64748b;
         }
 
-        /* Header Section */
-        .page-header {
-          background: white;
-          border-bottom: 1px solid #e5e7eb;
-          padding: 1.5rem 0;
-          position: sticky;
-          top: 0;
-          z-index: 40;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        .listing-page {
+          background-color: var(--bg-page);
+          min-height: 100vh;
         }
 
         .container {
-          max-width: 1400px;
+          max-width: 1440px;
           margin: 0 auto;
-          padding: 0 1rem;
+          padding: 0 16px;
         }
 
-        .header-content {
+        /* --- Sticky Header --- */
+        .sticky-header {
+          background: white;
+          position: sticky;
+          top: 0;
+          z-index: 40;
+          border-bottom: 1px solid var(--border);
+          padding: 16px 0;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+        }
+
+        .header-row {
           display: flex;
-          align-items: center;
           justify-content: space-between;
-          gap: 1rem;
+          align-items: center;
           flex-wrap: wrap;
-        }
-
-        .title-section {
-          flex: 1;
-          min-width: 200px;
+          gap: 16px;
         }
 
         .page-title {
-          font-size: 1.75rem;
-          font-weight: 700;
-          color: #111827;
-          margin: 0 0 0.25rem 0;
+          font-family: 'Playfair Display', serif;
+          font-size: 1.5rem;
+          color: var(--text-main);
+          margin: 0;
+          text-transform: capitalize;
         }
 
         .product-count {
-          color: #6b7280;
           font-size: 0.875rem;
-          margin: 0;
+          color: var(--text-muted);
+          margin-top: 4px;
+          display: block;
         }
 
-        /* Mobile Controls */
-        .mobile-controls {
+        .header-controls {
           display: flex;
           align-items: center;
-          gap: 0.75rem;
+          gap: 12px;
         }
 
-        .filter-toggle-btn {
+        .control-btn {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          padding: 0.625rem 1rem;
+          gap: 8px;
+          padding: 8px 16px;
+          border: 1px solid var(--border);
           background: white;
-          border: 1px solid #d1d5db;
-          border-radius: 0.5rem;
-          font-size: 0.875rem;
+          border-radius: 8px;
           font-weight: 500;
-          color: #374151;
           cursor: pointer;
           transition: all 0.2s;
           position: relative;
         }
 
-        .filter-toggle-btn:hover {
-          background: #f9fafb;
-          border-color: #9ca3af;
+        .control-btn:hover { border-color: var(--text-muted); }
+        
+        .badge {
+          background: var(--primary);
+          color: white;
+          font-size: 10px;
+          width: 18px;
+          height: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
+          position: absolute;
+          top: -6px;
+          right: -6px;
         }
 
-        .filter-badge {
-          position: absolute;
-          top: -4px;
-          right: -4px;
-          width: 8px;
-          height: 8px;
-          background: #ef4444;
-          border-radius: 50%;
-          border: 2px solid white;
-        }
+        .mobile-filter-btn { display: none; } /* Shown on mobile via query */
 
         .view-toggle {
-          display: none;
-          gap: 0.25rem;
-          background: #f3f4f6;
-          padding: 0.25rem;
-          border-radius: 0.5rem;
+          display: flex;
+          background: #f1f5f9;
+          padding: 4px;
+          border-radius: 8px;
         }
 
         .view-btn {
-          padding: 0.5rem;
-          background: transparent;
+          padding: 6px 10px;
           border: none;
-          border-radius: 0.375rem;
+          background: transparent;
+          border-radius: 6px;
+          color: var(--text-muted);
           cursor: pointer;
-          transition: all 0.2s;
-          color: #6b7280;
+          display: flex;
         }
 
         .view-btn.active {
           background: white;
-          color: #111827;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-        }
-
-        .icon {
-          width: 1.25rem;
-          height: 1.25rem;
-        }
-
-        /* Sort Section */
-        .sort-section {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-
-        .sort-label {
-          font-size: 0.875rem;
-          color: #6b7280;
-          font-weight: 500;
+          color: var(--text-main);
+          box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
 
         .sort-select {
-          padding: 0.625rem 2.5rem 0.625rem 1rem;
-          border: 1px solid #d1d5db;
-          border-radius: 0.5rem;
-          font-size: 0.875rem;
+          padding: 8px 12px;
+          border: 1px solid var(--border);
+          border-radius: 8px;
           background: white;
-          color: #111827;
-          cursor: pointer;
-          transition: all 0.2s;
-          appearance: none;
-          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
-          background-repeat: no-repeat;
-          background-position: right 0.5rem center;
-          background-size: 1.25rem;
-        }
-
-        .sort-select:focus {
-          outline: none;
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-
-        /* Active Filters */
-        .active-filters {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          margin-top: 1rem;
-          padding-top: 1rem;
-          border-top: 1px solid #e5e7eb;
-          flex-wrap: wrap;
-        }
-
-        .filter-label {
           font-size: 0.875rem;
-          font-weight: 500;
-          color: #6b7280;
+          color: var(--text-main);
+          cursor: pointer;
+          outline: none;
         }
 
-        .filter-tags {
+        /* Active Tags */
+        .active-tags-row {
           display: flex;
-          align-items: center;
-          gap: 0.5rem;
           flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 16px;
+          padding-top: 12px;
+          border-top: 1px solid #f1f5f9;
         }
 
-        .filter-tag {
+        .tag {
           display: inline-flex;
           align-items: center;
-          gap: 0.5rem;
-          padding: 0.375rem 0.75rem;
-          background: #eff6ff;
-          color: #1e40af;
-          border-radius: 9999px;
-          font-size: 0.813rem;
+          gap: 6px;
+          padding: 4px 10px;
+          background: #fff1f2;
+          color: var(--primary);
+          border: 1px solid #fecdd3;
+          border-radius: 20px;
+          font-size: 0.8rem;
           font-weight: 500;
         }
 
-        .filter-tag button {
+        .tag svg { cursor: pointer; }
+
+        .color-dot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          border: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .clear-text {
           background: none;
           border: none;
-          color: #1e40af;
-          font-size: 1.25rem;
-          line-height: 1;
+          color: var(--text-muted);
+          font-size: 0.8rem;
+          text-decoration: underline;
           cursor: pointer;
-          padding: 0;
-          margin-left: 0.25rem;
         }
 
-        .clear-all-btn {
-          padding: 0.375rem 0.75rem;
-          background: none;
-          border: 1px solid #d1d5db;
-          border-radius: 0.375rem;
-          font-size: 0.813rem;
-          font-weight: 500;
-          color: #374151;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .clear-all-btn:hover {
-          background: #f9fafb;
-          border-color: #9ca3af;
-        }
-
-        /* Layout */
-        .listing-layout {
+        /* --- Main Layout --- */
+        .main-layout {
           display: grid;
-          grid-template-columns: 280px 1fr;
-          gap: 2rem;
-          padding: 2rem 0;
-          position: relative;
+          grid-template-columns: 260px 1fr;
+          gap: 32px;
+          padding-top: 32px;
+          padding-bottom: 60px;
         }
 
-        /* Filter Overlay */
-        .filter-overlay {
-          display: none;
+        /* Sidebar Desktop */
+        .sidebar-desktop {
+          position: sticky;
+          top: 140px; /* Adjust based on header height */
+          height: fit-content;
+          max-height: calc(100vh - 160px);
+          overflow-y: auto;
+          padding-right: 8px;
+        }
+
+        /* Sidebar Mobile Drawer */
+        .backdrop {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0.5);
-          z-index: 45;
+          background: rgba(0,0,0,0.5);
+          backdrop-filter: blur(2px);
+          z-index: 90;
         }
 
-        /* Sidebar */
-        .sidebar {
+        .sidebar-mobile {
+          position: fixed;
+          top: 0;
+          left: 0;
+          bottom: 0;
+          width: 85%;
+          max-width: 320px;
           background: white;
-          border-radius: 0.75rem;
-          padding: 1.5rem;
-          height: fit-content;
-          position: sticky;
-          top: 6rem;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+          z-index: 100;
+          display: flex;
+          flex-direction: column;
+          box-shadow: 4px 0 24px rgba(0,0,0,0.1);
         }
 
-        .sidebar-header {
-          display: none;
+        .mobile-header {
+          padding: 16px;
+          border-bottom: 1px solid var(--border);
+          display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 1.5rem;
-          padding-bottom: 1rem;
-          border-bottom: 1px solid #e5e7eb;
+          font-weight: bold;
         }
 
-        .sidebar-title {
-          font-size: 1.125rem;
-          font-weight: 600;
-          color: #111827;
-          margin: 0;
+        .mobile-content {
+          flex: 1;
+          overflow-y: auto;
+          padding: 16px;
         }
 
-        .close-btn {
-          display: none;
-          background: none;
-          border: none;
-          font-size: 2rem;
-          color: #6b7280;
-          cursor: pointer;
-          line-height: 1;
-          padding: 0;
-          width: 2rem;
-          height: 2rem;
-          align-items: center;
-          justify-content: center;
-        }
-
-        /* Products Container */
-        .products-container {
-          min-height: 400px;
-        }
-
-        .products-grid {
+        .mobile-footer {
+          padding: 16px;
+          border-top: 1px solid var(--border);
           display: grid;
-          gap: 1.5rem;
-          margin-bottom: 3rem;
+          grid-template-columns: 1fr 2fr;
+          gap: 12px;
         }
 
-        .products-grid.grid-view {
+        .btn-reset {
+          background: white;
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 12px;
+          font-weight: 600;
+        }
+
+        .btn-apply {
+          background: var(--text-main);
+          color: white;
+          border: none;
+          border-radius: 8px;
+          font-weight: 600;
+        }
+
+        /* --- Product Grid --- */
+        .products-grid.grid {
+          display: grid;
           grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+          gap: 24px;
         }
 
-        .products-grid.list-view {
-          grid-template-columns: 1fr;
+        .products-grid.list {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
         }
 
-        /* Loading State */
-        .loading-container {
+        /* Loader & Empty */
+        .loader-area, .empty-state {
+          min-height: 400px;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          min-height: 400px;
-          gap: 1rem;
+          text-align: center;
         }
 
         .spinner {
-          width: 3rem;
-          height: 3rem;
-          border: 4px solid #e5e7eb;
-          border-top-color: #3b82f6;
+          width: 40px;
+          height: 40px;
+          border: 3px solid #f3f3f3;
+          border-top: 3px solid var(--primary);
           border-radius: 50%;
-          animation: spin 0.8s linear infinite;
+          animation: spin 1s linear infinite;
+          margin-bottom: 16px;
         }
 
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        .loading-text {
-          color: #6b7280;
-          font-size: 0.875rem;
-        }
-
-        /* Empty State */
-        .empty-state {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          min-height: 400px;
-          text-align: center;
-          padding: 3rem 1.5rem;
-        }
-
-        .empty-icon {
-          width: 4rem;
-          height: 4rem;
-          color: #d1d5db;
-          margin-bottom: 1rem;
-        }
-
-        .empty-title {
-          font-size: 1.25rem;
-          font-weight: 600;
-          color: #111827;
-          margin: 0 0 0.5rem 0;
-        }
-
-        .empty-text {
-          color: #6b7280;
-          margin: 0 0 1.5rem 0;
+        .empty-icon { font-size: 3rem; margin-bottom: 16px; opacity: 0.5; }
+        .empty-state h3 { margin: 0; color: var(--text-main); }
+        .empty-state p { color: var(--text-muted); margin: 8px 0 24px; }
+        .empty-state button {
+          background: var(--text-main);
+          color: white;
+          padding: 10px 24px;
+          border-radius: 8px;
+          border: none;
+          cursor: pointer;
         }
 
         /* Pagination */
@@ -638,189 +623,53 @@ const ProductListing = () => {
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 1.5rem;
-          padding: 2rem 0;
-          background: white;
-          border-radius: 0.75rem;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+          gap: 20px;
+          margin-top: 48px;
+          padding-top: 24px;
+          border-top: 1px solid var(--border);
         }
 
-        .pagination-btn {
+        .pagination button {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          padding: 0.75rem 1.25rem;
+          gap: 8px;
           background: white;
-          border: 1px solid #d1d5db;
-          border-radius: 0.5rem;
-          font-size: 0.875rem;
-          font-weight: 500;
-          color: #374151;
+          border: 1px solid var(--border);
+          padding: 8px 16px;
+          border-radius: 8px;
           cursor: pointer;
+          color: var(--text-main);
+          font-weight: 500;
           transition: all 0.2s;
         }
 
-        .pagination-btn:hover:not(:disabled) {
-          background: #f9fafb;
-          border-color: #9ca3af;
-        }
-
-        .pagination-btn:disabled {
+        .pagination button:disabled {
           opacity: 0.5;
           cursor: not-allowed;
         }
 
-        .pagination-info {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 0.25rem;
+        .pagination button:hover:not(:disabled) {
+          border-color: var(--text-main);
         }
 
-        .page-numbers {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          font-size: 1.125rem;
-          font-weight: 600;
-          color: #111827;
-        }
-
-        .separator {
-          color: #d1d5db;
-        }
-
-        .page-label {
-          font-size: 0.75rem;
-          color: #6b7280;
-        }
-
-        .btn {
-          padding: 0.75rem 1.5rem;
-          border-radius: 0.5rem;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.2s;
-          border: none;
-        }
-
-        .btn-primary {
-          background: #3b82f6;
-          color: white;
-        }
-
-        .btn-primary:hover {
-          background: #2563eb;
-        }
-
-        /* Responsive Design */
-        @media (min-width: 768px) {
-          .view-toggle {
-            display: flex;
-          }
-
-          .products-grid.grid-view {
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          }
-        }
-
+        /* --- Responsive Breakpoints --- */
         @media (max-width: 1024px) {
-          .listing-layout {
-            grid-template-columns: 1fr;
-          }
-
-          .filter-overlay.show {
-            display: block;
-          }
-
-          .sidebar {
-            position: fixed;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 320px;
-            max-width: 85vw;
-            z-index: 50;
-            transform: translateX(-100%);
-            transition: transform 0.3s;
-            border-radius: 0;
-            overflow-y: auto;
-          }
-
-          .sidebar.show {
-            transform: translateX(0);
-          }
-
-          .sidebar-header {
-            display: flex;
-          }
-
-          .close-btn {
-            display: flex;
-          }
-
-          .filter-overlay {
-            display: none;
-          }
-
-          .filter-overlay.show {
-            display: block;
-          }
+          .main-layout { grid-template-columns: 1fr; }
+          .sidebar-desktop { display: none; }
+          .mobile-filter-btn { display: flex; }
         }
 
-        @media (max-width: 768px) {
-          .page-title {
-            font-size: 1.5rem;
-          }
-
-          .sort-section {
-            width: 100%;
-            order: 3;
-          }
-
-          .sort-label {
-            display: none;
-          }
-
-          .sort-select {
-            width: 100%;
-          }
-
-          .products-grid.grid-view {
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            gap: 1rem;
-          }
-
-          .pagination {
-            gap: 1rem;
-            padding: 1.5rem 1rem;
-          }
-
-          .pagination-btn .btn-text {
-            display: none;
-          }
-
-          .page-label {
-            display: none;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .page-header {
-            padding: 1rem 0;
-          }
-
-          .header-content {
-            gap: 0.75rem;
-          }
-
-          .products-grid.grid-view {
+        @media (max-width: 640px) {
+          .sticky-header { top: -1px; } /* Fix ios glitch */
+          .products-grid.grid {
             grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
           }
-
-          .pagination-info {
-            font-size: 0.875rem;
-          }
+          .header-row { gap: 12px; }
+          .header-controls { width: 100%; justify-content: space-between; }
+          .sort-wrapper { flex: 1; }
+          .sort-select { width: 100%; }
+          .page-title { font-size: 1.25rem; }
         }
       `}</style>
     </div>

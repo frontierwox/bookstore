@@ -1,500 +1,476 @@
-import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
-import {
-  MdTrendingUp,
-  MdTrendingDown,
-  MdAttachMoney,
-  MdShoppingCart,
-  MdPeople,
-  MdLocalShipping,
-  MdEmail,
-  MdVisibility,
-  MdDownload,
-  MdFilterList,
-  MdDateRange
-} from 'react-icons/md'
-import { adminApi } from '../services/admin'
-import './AdminDashboards.css'
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, 
+  Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend 
+} from 'recharts';
+import { motion } from 'framer-motion';
+import { 
+  TrendingUp, TrendingDown, DollarSign, ShoppingBag, Truck, 
+  Download, Filter, Calendar, Search, Eye, Mail, RefreshCw, 
+  Package, CheckCircle, Clock, XCircle 
+} from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { adminApi } from '../services/admin';
+
+// --- Theme Configuration ---
+const COLORS = {
+  primary: '#e11d48', // Rose-600
+  secondary: '#475569', // Slate-600
+  grid: '#f1f5f9',
+  pie: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444'] // Blue, Violet, Emerald, Amber, Red
+};
 
 const SalesAnalyticsDashboard = () => {
-  const [analytics, setAnalytics] = useState(null)
-  const [topProducts, setTopProducts] = useState([])
-  const [discountAnalytics, setDiscountAnalytics] = useState(null)
-  const [orders, setOrders] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [period, setPeriod] = useState('month')
-  const [currentPage, setCurrentPage] = useState(1)
-  const [orderFilters, setOrderFilters] = useState({
-    status: '',
-    search: '',
-    dateFrom: '',
-    dateTo: ''
-  })
+  // --- State ---
+  const [analytics, setAnalytics] = useState(null);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [period, setPeriod] = useState('month');
+  
+  // Filters
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  // --- Data Fetching ---
+  const loadDashboardData = async () => {
+    try {
+      const [analyticsData, ordersData] = await Promise.all([
+        adminApi.getAnalyticsOverview({ period }),
+        adminApi.getOrders({ page: currentPage, limit: 50 }) // Fetching more for local filtering demo
+      ]);
+      setAnalytics(analyticsData.analytics);
+      setOrders(ordersData.orders || []);
+    } catch (error) {
+      console.error('Dashboard Load Error:', error);
+      toast.error('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    fetchAnalytics()
-    fetchTopProducts()
-    fetchDiscountAnalytics()
-    fetchOrders()
-  }, [period])
+    setLoading(true);
+    loadDashboardData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period]);
 
-  const fetchAnalytics = async () => {
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    loadDashboardData();
+  };
+
+  // --- Handlers ---
+  const handleStatusUpdate = async (orderId, newStatus) => {
+    const previousOrders = [...orders];
+    // Optimistic Update
+    setOrders(prev => prev.map(o => o._id === orderId ? { ...o, status: newStatus } : o));
+    
     try {
-      setLoading(true)
-      const data = await adminApi.getAnalyticsOverview({ period })
-      setAnalytics(data.analytics)
+      await adminApi.updateOrderStatus(orderId, { status: newStatus });
+      toast.success(`Order status updated to ${newStatus}`);
     } catch (error) {
-      console.error('Error fetching analytics:', error)
-    } finally {
-      setLoading(false)
+      setOrders(previousOrders);
+      toast.error('Failed to update status');
     }
-  }
+  };
 
-  const fetchTopProducts = async () => {
-    try {
-      const data = await adminApi.getTopSellingProducts({ period, limit: 10 })
-      setTopProducts(data.products || [])
-    } catch (error) {
-      console.error('Error fetching top products:', error)
-    }
-  }
+  // --- Memoized Data ---
+  
+  // 1. Filtered Orders Table
+  const filteredOrders = useMemo(() => {
+    return orders.filter(order => {
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = 
+        order.orderNumber.toLowerCase().includes(searchLower) ||
+        order.user?.name?.toLowerCase().includes(searchLower);
+      const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [orders, searchTerm, statusFilter]);
 
-  const fetchDiscountAnalytics = async () => {
-    try {
-      const data = await adminApi.getDiscountAnalytics({ period })
-      setDiscountAnalytics(data.analytics)
-    } catch (error) {
-      console.error('Error fetching discount analytics:', error)
-    }
-  }
+  // 2. Revenue Chart Data
+  const revenueChartData = useMemo(() => {
+    if (!analytics?.monthlySales) return [];
+    return analytics.monthlySales.map(m => ({
+      name: new Date(2024, m._id.month - 1).toLocaleString('default', { month: 'short' }),
+      revenue: m.revenue,
+      orders: m.count
+    }));
+  }, [analytics]);
 
-  const fetchOrders = async () => {
-    try {
-      const params = {
-        page: currentPage,
-        limit: 10,
-        ...orderFilters
-      }
-      const data = await adminApi.getOrders(params)
-      setOrders(data.orders || [])
-    } catch (error) {
-      console.error('Error fetching orders:', error)
-    }
-  }
+  // 3. Status Distribution Data (Pie Chart) 
+  const statusDistribution = useMemo(() => {
+    const stats = { pending: 0, processing: 0, shipped: 0, delivered: 0, cancelled: 0 };
+    orders.forEach(o => {
+      const s = o.status.toLowerCase();
+      if (stats[s] !== undefined) stats[s]++;
+    });
 
-  const handleOrderStatusUpdate = async (orderId, newStatus) => {
-    try {
-      await adminApi.updateOrderStatus(orderId, { status: newStatus })
-      fetchOrders()
-      fetchAnalytics()
-      alert('Order status updated successfully!')
-    } catch (error) {
-      console.error('Error updating order status:', error)
-      alert('Failed to update order status')
-    }
-  }
+    return [
+      { name: 'Pending', value: stats.pending },
+      { name: 'Processing', value: stats.processing },
+      { name: 'Shipped', value: stats.shipped },
+      { name: 'Delivered', value: stats.delivered },
+      { name: 'Cancelled', value: stats.cancelled },
+    ].filter(item => item.value > 0); // Only show active statuses
+  }, [orders]);
 
-  const handleResendEmail = async (orderId, emailType) => {
-    try {
-      await adminApi.resendOrderEmail(orderId, { emailType })
-      alert(`${emailType} email resent successfully!`)
-    } catch (error) {
-      console.error('Error resending email:', error)
-      alert('Failed to resend email')
-    }
-  }
+  // --- Helpers ---
+  const formatPrice = (price) => 
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price || 0);
 
-  const formatPrice = (price) => {
-    return `₹${price?.toLocaleString('en-IN') || '0'}`
-  }
-
-  const formatGrowth = (growth) => {
-    if (growth > 0) {
-      return { value: `+${growth.toFixed(1)}%`, class: 'growth-positive' }
-    } else if (growth < 0) {
-      return { value: `${growth.toFixed(1)}%`, class: 'growth-negative' }
-    } else {
-      return { value: '0.0%', class: 'growth-neutral' }
-    }
-  }
-
-  const getStatusColor = (status) => {
-    const colors = {
-      pending: '#ff9800',
-      confirmed: '#2196f3',
-      processing: '#9c27b0',
-      shipped: '#607d8b',
-      delivered: '#4caf50',
-      cancelled: '#f44336',
-      refunded: '#795548'
-    }
-    return colors[status] || '#757575'
-  }
-
-  const periods = [
-    { value: 'today', label: 'Today' },
-    { value: 'week', label: 'This Week' },
-    { value: 'month', label: 'This Month' },
-    { value: 'quarter', label: 'This Quarter' },
-    { value: 'year', label: 'This Year' }
-  ]
-
-  if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="spinner"></div>
-        <p>Loading analytics...</p>
-      </div>
-    )
-  }
+  if (loading && !isRefreshing) return <DashboardSkeleton />;
 
   return (
-    <div className="sales-analytics">
-      <div className="dashboard-header">
-        <h1>Sales & Analytics</h1>
-        <div className="header-controls">
-          <select
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-            className="period-select"
-          >
-            {periods.map(p => (
-              <option key={p.value} value={p.value}>{p.label}</option>
-            ))}
-          </select>
-          <button className="btn btn-secondary">
-            <MdDownload size={16} />
-            Export Report
-          </button>
-        </div>
-      </div>
-
-      {/* Overview Stats */}
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon revenue">
-            <MdAttachMoney size={24} />
-          </div>
-          <div className="stat-content">
-            <h3>Total Revenue</h3>
-            <p className="stat-value">
-              {formatPrice(analytics?.overview?.revenue?.current)}
-            </p>
-            <div className="stat-change">
-              {analytics?.overview?.revenue?.growth !== undefined && (
-                <span className={formatGrowth(analytics.overview.revenue.growth).class}>
-                  {formatGrowth(analytics.overview.revenue.growth).value}
-                  {analytics.overview.revenue.growth > 0 ? <MdTrendingUp /> : <MdTrendingDown />}
-                </span>
-              )}
-              <span className="stat-period">vs last {period}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon orders">
-            <MdShoppingCart size={24} />
-          </div>
-          <div className="stat-content">
-            <h3>Total Orders</h3>
-            <p className="stat-value">
-              {analytics?.overview?.orders?.current || 0}
-            </p>
-            <div className="stat-change">
-              {analytics?.overview?.orders?.growth !== undefined && (
-                <span className={formatGrowth(analytics.overview.orders.growth).class}>
-                  {formatGrowth(analytics.overview.orders.growth).value}
-                  {analytics.overview.orders.growth > 0 ? <MdTrendingUp /> : <MdTrendingDown />}
-                </span>
-              )}
-              <span className="stat-period">vs last {period}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon aov">
-            <MdLocalShipping size={24} />
-          </div>
-          <div className="stat-content">
-            <h3>Average Order Value</h3>
-            <p className="stat-value">
-              {formatPrice(analytics?.overview?.averageOrderValue?.current)}
-            </p>
-            <div className="stat-change">
-              {analytics?.overview?.averageOrderValue?.growth !== undefined && (
-                <span className={formatGrowth(analytics.overview.averageOrderValue.growth).class}>
-                  {formatGrowth(analytics.overview.averageOrderValue.growth).value}
-                  {analytics.overview.averageOrderValue.growth > 0 ? <MdTrendingUp /> : <MdTrendingDown />}
-                </span>
-              )}
-              <span className="stat-period">vs last {period}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon customers">
-            <MdPeople size={24} />
-          </div>
-          <div className="stat-content">
-            <h3>New Customers</h3>
-            <p className="stat-value">
-              {analytics?.overview?.customers?.newInPeriod || 0}
-            </p>
-            <div className="stat-change">
-              <span className="stat-period">in {period}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon conversion">
-            <MdTrendingUp size={24} />
-          </div>
-          <div className="stat-content">
-            <h3>Conversion Rate</h3>
-            <p className="stat-value">
-              {analytics?.overview?.orders?.current && analytics?.overview?.customers?.total 
-                ? ((analytics.overview.orders.current / analytics.overview.customers.total) * 100).toFixed(1)
-                : 0}%
-            </p>
-            <div className="stat-change">
-              <span className="stat-period">estimated</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon pending">
-            <MdLocalShipping size={24} />
-          </div>
-          <div className="stat-content">
-            <h3>Pending Orders</h3>
-            <p className="stat-value">
-              {analytics?.overview?.orders?.current - analytics?.overview?.orders?.current * 0.8 || 0}
-            </p>
-            <div className="stat-change">
-              <span className="stat-period">awaiting processing</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Charts Section */}
-      <div className="charts-section">
-        <div className="chart-container">
-          <h3>Revenue Trend</h3>
-          <div className="chart-placeholder">
-            <p>Monthly Revenue Chart</p>
-            {analytics?.monthlySales && analytics.monthlySales.length > 0 ? (
-              <div className="chart-data">
-                {analytics.monthlySales.map((month, index) => (
-                  <div key={index} className="chart-bar">
-                    <div className="bar" style={{ height: `${(month.revenue / Math.max(...analytics.monthlySales.map(m => m.revenue))) * 100}%` }}></div>
-                    <span className="bar-label">
-                      {new Date(2024, month._id.month - 1).toLocaleString('default', { month: 'short' })}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p>No data available</p>
-            )}
-          </div>
-        </div>
-
-        <div className="chart-container">
-          <h3>Order Status Distribution</h3>
-          <div className="chart-placeholder">
-            <div className="pie-chart">
-              {analytics?.orderStatusBreakdown?.map((status, index) => (
-                <div key={status._id} className="pie-segment" style={{
-                  '--color': getStatusColor(status._id),
-                  '--percentage': `${(status.count / analytics.orderStatusBreakdown.reduce((sum, s) => sum + s.count, 0)) * 100}%`
-                }}>
-                  <span className="pie-label">{status._id}</span>
-                  <span className="pie-value">{status.count}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Top Selling Products */}
-      <div className="top-products-section">
-        <h3>Top Selling Products</h3>
-        <div className="top-products-grid">
-          {topProducts.map((product, index) => (
-            <div key={product._id} className="top-product-card">
-              <div className="product-rank">#{index + 1}</div>
-              <div className="product-info">
-                {product.image && (
-                  <img src={product.image} alt={product.name} className="product-image" />
-                )}
-                <div className="product-details">
-                  <h4>{product.name}</h4>
-                  <p className="product-category">{product.category}</p>
-                  <div className="product-stats">
-                    <span>Sold: {product.totalSold}</span>
-                    <span>Revenue: {formatPrice(product.revenue)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Recent Orders Table */}
-      <div className="orders-section">
-        <div className="section-header">
-          <h3>Recent Orders</h3>
-          <Link to="/admin/orders" className="btn btn-secondary btn-sm">
-            View All Orders
-          </Link>
-        </div>
+    <div className="min-h-screen bg-slate-50/50 pb-20 font-sans">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-8">
         
-        <div className="orders-filters">
-          <input
-            type="text"
-            placeholder="Search orders..."
-            value={orderFilters.search}
-            onChange={(e) => setOrderFilters(prev => ({ ...prev, search: e.target.value }))}
-            className="search-input"
-          />
-          <select
-            value={orderFilters.status}
-            onChange={(e) => setOrderFilters(prev => ({ ...prev, status: e.target.value }))}
-            className="filter-select"
-          >
-            <option value="">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="processing">Processing</option>
-            <option value="shipped">Shipped</option>
-            <option value="delivered">Delivered</option>
-          </select>
-        </div>
-
-        <div className="orders-table-container">
-          <table className="orders-table">
-            <thead>
-              <tr>
-                <th>Order #</th>
-                <th>Customer</th>
-                <th>Date</th>
-                <th>Amount</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map(order => (
-                <tr key={order._id}>
-                  <td className="order-number">
-                    <strong>{order.orderNumber}</strong>
-                  </td>
-                  <td>
-                    <div className="customer-info">
-                      <span>{order.user?.name || 'Guest'}</span>
-                      <small>{order.user?.email || order.customerEmail}</small>
-                    </div>
-                  </td>
-                  <td>
-                    {new Date(order.createdAt).toLocaleDateString('en-IN')}
-                  </td>
-                  <td className="amount">
-                    {formatPrice(order.totalAmount)}
-                  </td>
-                  <td>
-                    <select
-                      value={order.status}
-                      onChange={(e) => handleOrderStatusUpdate(order._id, e.target.value)}
-                      className="status-select"
-                      style={{ '--status-color': getStatusColor(order.status) }}
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="confirmed">Confirmed</option>
-                      <option value="processing">Processing</option>
-                      <option value="shipped">Shipped</option>
-                      <option value="delivered">Delivered</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </td>
-                  <td>
-                    <div className="action-buttons">
-                      <button
-                        onClick={() => window.open(`/admin/orders/${order._id}`, '_blank')}
-                        className="btn-icon"
-                        title="View Details"
-                      >
-                        <MdVisibility size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleResendEmail(order._id, 'confirmation')}
-                        className="btn-icon"
-                        title="Resend Email"
-                      >
-                        <MdEmail size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+        {/* --- Header --- */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
+          <div>
+            <h1 className="text-3xl font-serif font-bold text-slate-900 tracking-tight">Sales Analytics</h1>
+            <p className="text-slate-500 mt-1 flex items-center gap-2 text-sm">
+              <Calendar size={14} /> 
+              Overview for <span className="font-semibold text-slate-900 capitalize">{period}</span>
+            </p>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Period Tabs */}
+            <div className="flex bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
+              {['week', 'month', 'year'].map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all capitalize ${
+                    period === p 
+                      ? 'bg-slate-900 text-white shadow-md' 
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  {p}
+                </button>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </div>
 
-      {/* Discount Analytics */}
-      {discountAnalytics && (
-        <div className="discount-analytics-section">
-          <h3>Discount Impact Analysis</h3>
-          <div className="discount-stats-grid">
-            <div className="discount-stat-card">
-              <h4>Total Discount Given</h4>
-              <p className="stat-value">
-                {formatPrice(discountAnalytics.overall?.totalDiscount || 0)}
-              </p>
+            <button 
+              onClick={handleRefresh}
+              className="p-2 bg-white border border-slate-200 text-slate-500 rounded-lg hover:text-rose-600 hover:border-rose-200 transition-all shadow-sm"
+            >
+              <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
+            </button>
+            
+            <button className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors shadow-md shadow-rose-200 font-medium text-sm">
+              <Download size={16} /> Export Report
+            </button>
+          </div>
+        </div>
+
+        {/* --- KPI Grid (3 Columns) --- */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <KPICard 
+            title="Total Revenue" 
+            value={formatPrice(analytics?.overview?.revenue?.current)} 
+            growth={analytics?.overview?.revenue?.growth}
+            icon={<DollarSign size={24} />}
+            color="emerald"
+            period={period}
+          />
+          <KPICard 
+            title="Total Orders" 
+            value={analytics?.overview?.orders?.current || 0} 
+            growth={analytics?.overview?.orders?.growth}
+            icon={<ShoppingBag size={24} />}
+            color="blue"
+            period={period}
+          />
+          <KPICard 
+            title="Avg. Order Value" 
+            value={formatPrice(analytics?.overview?.averageOrderValue?.current)} 
+            growth={analytics?.overview?.averageOrderValue?.growth}
+            icon={<Truck size={24} />}
+            color="violet"
+            period={period}
+          />
+        </div>
+
+        {/* --- Charts Section --- */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8">
+          
+          {/* Main Revenue Chart */}
+          <div className="xl:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Revenue Trend</h3>
+                <p className="text-sm text-slate-500">Income performance over time</p>
+              </div>
             </div>
-            <div className="discount-stat-card">
-              <h4>Orders with Discount</h4>
-              <p className="stat-value">
-                {discountAnalytics.overall?.ordersWithDiscount || 0}
-              </p>
-            </div>
-            <div className="discount-stat-card">
-              <h4>Discount Rate</h4>
-              <p className="stat-value">
-                {discountAnalytics.overall?.totalOrders 
-                  ? ((discountAnalytics.overall.ordersWithDiscount / discountAnalytics.overall.totalOrders) * 100).toFixed(1)
-                  : 0}%
-              </p>
+            
+            <div className="h-[350px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={revenueChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={COLORS.primary} stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor={COLORS.primary} stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={COLORS.grid} />
+                  <XAxis 
+                    dataKey="name" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{fill: COLORS.secondary, fontSize: 12}} 
+                    dy={10} 
+                  />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{fill: COLORS.secondary, fontSize: 12}} 
+                    tickFormatter={(value) => `₹${value/1000}k`} 
+                  />
+                  <RechartsTooltip 
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    formatter={(value) => [formatPrice(value), 'Revenue']}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="revenue" 
+                    stroke={COLORS.primary} 
+                    strokeWidth={3} 
+                    fillOpacity={1} 
+                    fill="url(#colorRevenue)" 
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
-          {discountAnalytics.byCategory && discountAnalytics.byCategory.length > 0 && (
-            <div className="category-discounts">
-              <h4>Discount by Category</h4>
-              <div className="category-discount-list">
-                {discountAnalytics.byCategory.map(category => (
-                  <div key={category._id} className="category-discount-item">
-                    <span className="category-name">{category._id}</span>
-                    <span className="category-discount">
-                      {formatPrice(category.totalDiscount)}
-                    </span>
-                  </div>
-                ))}
+          {/* Order Status Distribution (Replacing Discounts) */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
+            <h3 className="text-lg font-bold text-slate-900 mb-1">Order Status</h3>
+            <p className="text-sm text-slate-500 mb-6">Distribution of current orders</p>
+
+            <div className="flex-1 min-h-[250px] relative">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={statusDistribution}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {statusDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS.pie[index % COLORS.pie.length]} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none' }} />
+                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+              
+              {/* Center Text overlay */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none pb-8">
+                <div className="text-center">
+                  <span className="block text-2xl font-bold text-slate-900">{orders.length}</span>
+                  <span className="text-xs text-slate-500 uppercase font-semibold">Total</span>
+                </div>
               </div>
             </div>
-          )}
+          </div>
         </div>
-      )}
-    </div>
-  )
-}
 
-export default SalesAnalyticsDashboard
+        {/* --- Recent Orders Table --- */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <h3 className="text-lg font-bold text-slate-900">Recent Orders</h3>
+            
+            <div className="flex gap-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input 
+                  type="text" 
+                  placeholder="Search orders..." 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none w-full sm:w-64 transition-all"
+                />
+              </div>
+              <div className="relative">
+                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <select 
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none appearance-none cursor-pointer"
+                >
+                  <option value="all">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="processing">Processing</option>
+                  <option value="shipped">Shipped</option>
+                  <option value="delivered">Delivered</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead className="bg-slate-50/50 text-slate-500 font-semibold border-b border-slate-100 uppercase text-xs tracking-wider">
+                <tr>
+                  <th className="px-6 py-4">Order ID</th>
+                  <th className="px-6 py-4">Date</th>
+                  <th className="px-6 py-4">Customer</th>
+                  <th className="px-6 py-4">Total</th>
+                  <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredOrders.length > 0 ? filteredOrders.slice((currentPage - 1) * 10, currentPage * 10).map((order) => (
+                  <tr key={order._id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="px-6 py-4 font-medium text-slate-900">
+                      #{order.orderNumber}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {new Date(order.createdAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="font-medium text-slate-900">{order.user?.name || 'Guest'}</div>
+                      <div className="text-xs text-slate-400">{order.customerEmail}</div>
+                    </td>
+                    <td className="px-6 py-4 font-bold text-slate-900">
+                      {formatPrice(order.totalAmount)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <StatusBadge status={order.status} />
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                         <button 
+                           onClick={() => window.open(`/admin/orders/${order._id}`, '_blank')}
+                           className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                         >
+                           <Eye size={16} />
+                         </button>
+                      </div>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan="6" className="px-6 py-12 text-center text-slate-400">
+                      <Package size={48} className="mx-auto mb-3 opacity-20" />
+                      No orders found matching your filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Simple Pagination */}
+          <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+            <button 
+              onClick={() => setCurrentPage(p => Math.max(1, p-1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1 bg-white border border-slate-200 rounded text-sm disabled:opacity-50 hover:bg-slate-100"
+            >
+              Previous
+            </button>
+            <button 
+              onClick={() => setCurrentPage(p => p+1)}
+              disabled={filteredOrders.length <= currentPage * 10}
+              className="px-3 py-1 bg-white border border-slate-200 rounded text-sm disabled:opacity-50 hover:bg-slate-100"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Sub Components ---
+
+const KPICard = ({ title, value, growth, icon, color, period }) => {
+  const colors = {
+    emerald: 'bg-emerald-100 text-emerald-600',
+    blue: 'bg-blue-100 text-blue-600',
+    violet: 'bg-violet-100 text-violet-600',
+  };
+
+  const isPositive = growth >= 0;
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow"
+    >
+      <div className="flex justify-between items-start mb-4">
+        <div className={`p-3 rounded-xl ${colors[color]}`}>
+          {icon}
+        </div>
+        <div className={`
+          flex items-center gap-1 font-bold text-xs px-2 py-1 rounded-full
+          ${isPositive ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'}
+        `}>
+          {isPositive ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+          {Math.abs(growth || 0).toFixed(1)}%
+        </div>
+      </div>
+      
+      <div>
+        <p className="text-slate-500 text-sm font-medium mb-1">{title}</p>
+        <h3 className="text-2xl font-bold text-slate-900">{value}</h3>
+      </div>
+    </motion.div>
+  );
+};
+
+const StatusBadge = ({ status }) => {
+  const styles = {
+    pending: 'bg-amber-100 text-amber-700',
+    processing: 'bg-blue-100 text-blue-700',
+    shipped: 'bg-purple-100 text-purple-700',
+    delivered: 'bg-emerald-100 text-emerald-700',
+    cancelled: 'bg-red-50 text-red-600',
+  };
+  
+  const icons = {
+    pending: <Clock size={12} />,
+    delivered: <CheckCircle size={12} />,
+    cancelled: <XCircle size={12} />,
+  };
+
+  const s = status?.toLowerCase() || 'pending';
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold capitalize ${styles[s] || 'bg-slate-100 text-slate-600'}`}>
+      {icons[s]} {status}
+    </span>
+  );
+};
+
+const DashboardSkeleton = () => (
+  <div className="min-h-screen bg-slate-50 p-8">
+    <div className="max-w-[1600px] mx-auto space-y-8 animate-pulse">
+      <div className="h-10 bg-slate-200 rounded w-1/4 mb-8"></div>
+      <div className="grid grid-cols-3 gap-6">
+        {[1,2,3].map(i => <div key={i} className="h-40 bg-slate-200 rounded-2xl"></div>)}
+      </div>
+      <div className="grid grid-cols-3 gap-8">
+        <div className="col-span-2 h-96 bg-slate-200 rounded-2xl"></div>
+        <div className="h-96 bg-slate-200 rounded-2xl"></div>
+      </div>
+    </div>
+  </div>
+);
+
+export default SalesAnalyticsDashboard;

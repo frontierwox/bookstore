@@ -1,56 +1,77 @@
 import { useState, useEffect, useContext } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { MdShoppingCart, MdFavorite, MdFavoriteBorder, MdShare, MdStar, MdStarBorder, MdLocalShipping, MdVerifiedUser, MdCached, MdExpandMore, MdExpandLess, MdZoomIn, MdClose } from 'react-icons/md'
+import { 
+  MdShoppingCart, MdFavorite, MdFavoriteBorder, 
+  MdLocalShipping, MdVerifiedUser, MdCached, 
+  MdZoomIn, MdClose, MdCheckCircle, MdArrowForward 
+} from 'react-icons/md'
 import { productsApi } from '../services/products'
 import { cartApi } from '../services/cart'
 import { CartContext } from '../context/CartContext'
 import { AuthContext } from '../context/AuthContext'
 
+// --- Helper: Toast Notification ---
+const Toast = ({ message, type, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3000)
+    return () => clearTimeout(timer)
+  }, [onClose])
+
+  return (
+    <div className={`toast-notification ${type}`}>
+      {type === 'success' && <MdCheckCircle size={20} />}
+      <span>{message}</span>
+    </div>
+  )
+}
+
+// --- Main Component ---
 const ProductDetails = () => {
   const { id } = useParams()
   const navigate = useNavigate()
   const { user } = useContext(AuthContext)
   const { addToCart } = useContext(CartContext)
 
+  // Data State
   const [product, setProduct] = useState(null)
   const [loading, setLoading] = useState(true)
+  
+  // Interaction State
   const [selectedImage, setSelectedImage] = useState(0)
   const [selectedSize, setSelectedSize] = useState('')
   const [selectedColor, setSelectedColor] = useState('')
   const [quantity, setQuantity] = useState(1)
-  const [isWishlisted, setIsWishlisted] = useState(false)
-  const [addingToCart, setAddingToCart] = useState(false)
-  const [showFullDescription, setShowFullDescription] = useState(false)
+  const [activeTab, setActiveTab] = useState('description')
   const [showImageZoom, setShowImageZoom] = useState(false)
-  const [showShareMenu, setShowShareMenu] = useState(false)
+  const [toast, setToast] = useState(null)
+  const [addingToCart, setAddingToCart] = useState(false)
+  const [isWishlisted, setIsWishlisted] = useState(false)
 
+  // Fetch Data
   useEffect(() => {
-    const fetchProduct = async () => {
+    const fetchProductData = async () => {
       try {
+        setLoading(true)
+        window.scrollTo(0, 0)
         const data = await productsApi.getProductById(id)
         setProduct(data.product)
-        // Set default size and color
-        if (data.product.sizes && data.product.sizes.length > 0) {
-          setSelectedSize(data.product.sizes[0])
-        }
-        if (data.product.colors && data.product.colors.length > 0) {
-          setSelectedColor(data.product.colors[0])
-        }
+        
+        // Set Defaults
+        if (data.product.sizes?.length > 0) setSelectedSize(data.product.sizes[0])
+        if (data.product.colors?.length > 0) setSelectedColor(data.product.colors[0])
       } catch (error) {
         console.error('Error fetching product:', error)
       } finally {
         setLoading(false)
       }
     }
-
-    fetchProduct()
+    fetchProductData()
   }, [id])
 
+  // Add to Cart Logic
   const handleAddToCart = async () => {
-    if (!user) {
-      navigate('/login')
-      return
-    }
+    if (!user) return navigate('/login', { state: { from: `/product/${id}` } })
+    if (product.stock <= 0) return
 
     setAddingToCart(true)
     try {
@@ -61,930 +82,576 @@ const ProductDetails = () => {
         selectedColor
       })
 
-      // Keep local cart badge in sync
-      addToCart(
-        {
-          _id: product._id,
-          name: product.name,
-          price: product.price,
-          discountPrice: product.discountedPrice || null
-        },
-        quantity
-      )
+      addToCart({
+        _id: product._id,
+        name: product.name,
+        price: product.price,
+        discountPrice: product.discountedPrice || null,
+        image: product.images[0]?.url
+      }, quantity)
 
-      // Show success notification
-      showNotification('Product added to cart!')
+      setToast({ message: 'Added to cart', type: 'success' })
     } catch (error) {
-      console.error('Error adding to cart:', error)
-      showNotification('Failed to add product to cart', 'error')
+      setToast({ message: 'Could not add to cart', type: 'error' })
     } finally {
       setAddingToCart(false)
     }
   }
 
-  const showNotification = (message, type = 'success') => {
-    // Simple notification - you can replace with toast library
-    const notification = document.createElement('div')
-    notification.className = `notification ${type}`
-    notification.textContent = message
-    document.body.appendChild(notification)
-    setTimeout(() => notification.classList.add('show'), 100)
-    setTimeout(() => {
-      notification.classList.remove('show')
-      setTimeout(() => notification.remove(), 300)
-    }, 3000)
-  }
+  const formatPrice = (price) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price)
 
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: product.name,
-        text: product.description,
-        url: window.location.href,
-      })
-    } else {
-      setShowShareMenu(!showShareMenu)
-    }
-  }
+  if (loading) return <div className="loader-container"><div className="spinner"></div></div>
+  if (!product) return <div className="error-container"><h2>Product Not Found</h2><Link to="/" className="btn-primary">Go Home</Link></div>
 
-  const formatPrice = (price) => {
-    return `₹${price.toLocaleString('en-IN')}`
-  }
-
-  if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="spinner"></div>
-        <p className="loading-text">Loading product details...</p>
-      </div>
-    )
-  }
-
-  if (!product) {
-    return (
-      <div className="error-page">
-        <div className="error-content">
-          <h2>Product not found</h2>
-          <p>The product you're looking for doesn't exist or has been removed.</p>
-          <Link to="/products" className="btn btn-primary">
-            Browse Products
-          </Link>
-        </div>
-      </div>
-    )
-  }
+  const discountPercentage = product.discountedPrice 
+    ? Math.round(((product.price - product.discountedPrice) / product.price) * 100) 
+    : 0
 
   return (
-    <div className="product-details-page">
-      {/* Breadcrumb */}
-      <nav className="breadcrumb">
-        <Link to="/">Home</Link>
-        <span className="separator">/</span>
-        <Link to="/products">Products</Link>
-        <span className="separator">/</span>
-        <span className="current">{product.name}</span>
-      </nav>
+    <div className="product-page">
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-      <div className="product-details-container">
-        {/* Product Gallery */}
-        <div className="product-gallery">
-          <div className="main-image-container">
-            {product.images && product.images.length > 0 ? (
-              <>
-                <img
-                  src={product.images[selectedImage]?.url}
-                  alt={product.images[selectedImage]?.alt || product.name}
-                  className="main-image"
-                  onClick={() => setShowImageZoom(true)}
-                />
-                <button 
-                  className="zoom-btn"
-                  onClick={() => setShowImageZoom(true)}
-                  aria-label="Zoom image"
-                >
-                  <MdZoomIn size={24} />
-                </button>
-                {product.discountedPrice && (
-                  <span className="discount-badge">
-                    {Math.round(((product.price - product.discountedPrice) / product.price) * 100)}% OFF
-                  </span>
-                )}
-              </>
-            ) : (
-              <div className="placeholder-image">No Image Available</div>
-            )}
-          </div>
+      <div className="container">
+        {/* Breadcrumbs */}
+        <nav className="breadcrumbs">
+          <Link to="/">Home</Link> / <Link to="/products">Collection</Link> / <span className="current">{product.name}</span>
+        </nav>
+
+        <div className="product-grid">
           
-          {product.images && product.images.length > 1 && (
-            <div className="thumbnail-list">
-              {product.images.map((image, index) => (
-                <button
-                  key={index}
-                  className={`thumbnail ${selectedImage === index ? 'active' : ''}`}
-                  onClick={() => setSelectedImage(index)}
-                  aria-label={`View image ${index + 1}`}
-                >
-                  <img
-                    src={image.url}
-                    alt={image.alt || `${product.name} ${index + 1}`}
-                  />
-                </button>
-              ))}
+          {/* --- Left Column: Gallery --- */}
+          <div className="gallery-section">
+            <div className="sticky-gallery">
+              <div className="main-image-wrapper" onClick={() => setShowImageZoom(true)}>
+                <img 
+                  src={product.images[selectedImage]?.url} 
+                  alt={product.name} 
+                  className="main-image"
+                />
+                <button className="zoom-trigger"><MdZoomIn size={20} /></button>
+                {discountPercentage > 0 && <span className="discount-tag">-{discountPercentage}%</span>}
+              </div>
+              
+              {product.images.length > 1 && (
+                <div className="thumbnails-grid">
+                  {product.images.map((img, idx) => (
+                    <div 
+                      key={idx} 
+                      className={`thumbnail ${selectedImage === idx ? 'active' : ''}`}
+                      onMouseEnter={() => setSelectedImage(idx)}
+                      onClick={() => setSelectedImage(idx)}
+                    >
+                      <img src={img.url} alt="" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* Product Info */}
-        <div className="product-info">
-          <div className="product-header">
-            <div className="title-section">
-              <h1 className="product-title">{product.name}</h1>
-              <button 
-                className="share-btn"
-                onClick={handleShare}
-                aria-label="Share product"
-              >
-                <MdShare size={20} />
-              </button>
-              {showShareMenu && (
-                <div className="share-menu">
-                  <button onClick={() => {
-                    navigator.clipboard.writeText(window.location.href)
-                    showNotification('Link copied to clipboard!')
-                    setShowShareMenu(false)
-                  }}>Copy Link</button>
+          {/* --- Right Column: Info & Actions --- */}
+          <div className="details-section">
+            
+            {/* Header */}
+            <div className="product-header">
+              <h1 className="title">{product.name}</h1>
+              <p className="subtitle">{product.shortDescription || "Elegant design crafted for perfection."}</p>
+            </div>
+
+            {/* Price */}
+            <div className="price-box">
+              <div className="price-row">
+                <span className="final-price">{formatPrice(product.discountedPrice || product.price)}</span>
+                {product.discountedPrice && (
+                  <span className="mrp">{formatPrice(product.price)}</span>
+                )}
+              </div>
+              <p className="tax-note">Inclusive of all taxes</p>
+            </div>
+
+            <div className="divider"></div>
+
+            {/* Selectors */}
+            <div className="selectors-container">
+              {/* Size Selector */}
+              {product.sizes?.length > 0 && (
+                <div className="selector-group">
+                  <div className="label-row">
+                    <span className="label">Size</span>
+                    {selectedSize && <span className="selected-value">{selectedSize}</span>}
+                  </div>
+                  <div className="options-grid">
+                    {product.sizes.map(size => (
+                      <button
+                        key={size}
+                        className={`size-btn ${selectedSize === size ? 'selected' : ''}`}
+                        onClick={() => setSelectedSize(size)}
+                      >
+                        {size}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Color Selector */}
+              {product.colors?.length > 0 && (
+                <div className="selector-group">
+                  <div className="label-row">
+                    <span className="label">Color</span>
+                    {selectedColor && <span className="selected-value" style={{textTransform: 'capitalize'}}>{selectedColor}</span>}
+                  </div>
+                  <div className="colors-row">
+                    {product.colors.map(color => (
+                      <button
+                        key={color}
+                        className={`color-dot ${selectedColor === color ? 'selected' : ''}`}
+                        style={{ backgroundColor: color }}
+                        onClick={() => setSelectedColor(color)}
+                        title={color}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Ratings */}
-            {product.ratings && (
-              <div className="product-ratings">
-                <div className="stars">
-                  {[...Array(5)].map((_, i) => (
-                    i < Math.round(product.ratings.average) 
-                      ? <MdStar key={i} className="star filled" />
-                      : <MdStarBorder key={i} className="star" />
-                  ))}
-                </div>
-                <span className="rating-text">
-                  {product.ratings.average.toFixed(1)} ({product.ratings.count} reviews)
-                </span>
+            {/* Actions */}
+            <div className="actions-desktop">
+              {/* Quantity */}
+              <div className="qty-wrapper">
+                <button onClick={() => setQuantity(Math.max(1, quantity - 1))}>−</button>
+                <span className="qty-val">{quantity}</span>
+                <button onClick={() => setQuantity(Math.min(product.stock, quantity + 1))} disabled={quantity >= product.stock}>+</button>
               </div>
-            )}
-          </div>
 
-          {/* Price Section */}
-          <div className="price-section">
-            {product.discountedPrice ? (
-              <div className="price-group">
-                <span className="price-current">{formatPrice(product.discountedPrice)}</span>
-                <span className="price-original">{formatPrice(product.price)}</span>
-                <span className="discount-tag">
-                  {Math.round(((product.price - product.discountedPrice) / product.price) * 100)}% OFF
-                </span>
-              </div>
-            ) : (
-              <span className="price-current">{formatPrice(product.price)}</span>
-            )}
-            <p className="tax-info">Inclusive of all taxes</p>
-          </div>
-
-          {/* Stock Status */}
-          <div className={`stock-status ${product.stock > 0 ? 'in-stock' : 'out-of-stock'}`}>
-            <span className="status-dot"></span>
-            {product.stock > 0 ? (
-              <span>In Stock - {product.stock} {product.stock === 1 ? 'piece' : 'pieces'} available</span>
-            ) : (
-              <span>Out of Stock</span>
-            )}
-          </div>
-
-          {/* Trust Badges */}
-          <div className="trust-badges">
-            <div className="badge">
-              <MdLocalShipping size={24} />
-              <div className="badge-text">
-                <strong>Free Delivery</strong>
-                <span>On orders above ₹999</span>
-              </div>
-            </div>
-            <div className="badge">
-              <MdVerifiedUser size={24} />
-              <div className="badge-text">
-                <strong>Secure Payment</strong>
-                <span>100% protected</span>
-              </div>
-            </div>
-            <div className="badge">
-              <MdCached size={24} />
-              <div className="badge-text">
-                <strong>Easy Returns</strong>
-                <span>7-day return policy</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="divider"></div>
-
-          {/* Size Selection */}
-          {product.sizes && product.sizes.length > 0 && (
-            <div className="option-selector">
-              <label className="option-label">
-                Select Size: <span className="selected-value">{selectedSize}</span>
-              </label>
-              <div className="size-options">
-                {product.sizes.map(size => (
-                  <button
-                    key={size}
-                    className={`size-btn ${selectedSize === size ? 'active' : ''}`}
-                    onClick={() => setSelectedSize(size)}
-                  >
-                    {size}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Color Selection */}
-          {product.colors && product.colors.length > 0 && (
-            <div className="option-selector">
-              <label className="option-label">
-                Select Color: <span className="selected-value">{selectedColor}</span>
-              </label>
-              <div className="color-options">
-                {product.colors.map(color => (
-                  <button
-                    key={color}
-                    className={`color-btn ${selectedColor === color ? 'active' : ''}`}
-                    style={{ 
-                      backgroundColor: color,
-                      border: selectedColor === color ? '3px solid #3b82f6' : '2px solid #e5e7eb'
-                    }}
-                    onClick={() => setSelectedColor(color)}
-                    title={color}
-                    aria-label={`Select ${color} color`}
-                  >
-                    {selectedColor === color && (
-                      <span className="check-mark">✓</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Quantity Selector */}
-          <div className="option-selector">
-            <label className="option-label">Quantity</label>
-            <div className="quantity-controls">
-              <button
-                className="qty-btn"
-                onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                disabled={quantity <= 1}
-                aria-label="Decrease quantity"
-              >
-                −
-              </button>
-              <input
-                type="number"
-                className="qty-input"
-                value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, Math.min(product.stock, parseInt(e.target.value) || 1)))}
-                min="1"
-                max={product.stock}
-                aria-label="Quantity"
-              />
-              <button
-                className="qty-btn"
-                onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
-                disabled={quantity >= product.stock}
-                aria-label="Increase quantity"
-              >
-                +
-              </button>
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="product-actions">
-            <button
-              onClick={handleAddToCart}
-              disabled={product.stock <= 0 || addingToCart}
-              className="btn btn-primary"
-            >
-              <MdShoppingCart size={20} />
-              <span>{addingToCart ? 'Adding...' : 'Add to Cart'}</span>
-            </button>
-            <button
-              onClick={() => setIsWishlisted(!isWishlisted)}
-              className={`btn btn-wishlist ${isWishlisted ? 'active' : ''}`}
-              aria-label={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
-            >
-              {isWishlisted ? <MdFavorite size={24} /> : <MdFavoriteBorder size={24} />}
-            </button>
-          </div>
-
-          <div className="divider"></div>
-
-          {/* Description */}
-          <div className="product-section">
-            <h2 className="section-title">Product Description</h2>
-            <div className={`description-content ${showFullDescription ? 'expanded' : ''}`}>
-              <p>{product.description}</p>
-            </div>
-            {product.description && product.description.length > 200 && (
+              {/* Add To Cart */}
               <button 
-                className="read-more-btn"
-                onClick={() => setShowFullDescription(!showFullDescription)}
+                className="add-to-cart-btn" 
+                onClick={handleAddToCart}
+                disabled={product.stock <= 0 || addingToCart}
               >
-                {showFullDescription ? (
-                  <>Read Less <MdExpandLess /></>
+                {product.stock <= 0 ? (
+                  'Out of Stock'
+                ) : addingToCart ? (
+                  'Adding...'
                 ) : (
-                  <>Read More <MdExpandMore /></>
+                  <>Add to Cart <MdArrowForward size={18}/></>
                 )}
               </button>
-            )}
-          </div>
 
-          {/* Specifications */}
-          {product.specifications && (
-            <div className="product-section">
-              <h2 className="section-title">Specifications</h2>
-              <div className="specifications-grid">
-                {product.specifications.fabric && (
-                  <div className="spec-item">
-                    <span className="spec-label">Fabric</span>
-                    <span className="spec-value">{product.specifications.fabric}</span>
-                  </div>
-                )}
-                {product.specifications.length && (
-                  <div className="spec-item">
-                    <span className="spec-label">Length</span>
-                    <span className="spec-value">{product.specifications.length}</span>
-                  </div>
-                )}
-                {product.specifications.work && (
-                  <div className="spec-item">
-                    <span className="spec-label">Work</span>
-                    <span className="spec-value">{product.specifications.work}</span>
-                  </div>
-                )}
-                <div className="spec-item">
-                  <span className="spec-label">Blouse Piece</span>
-                  <span className="spec-value">
-                    {product.specifications.blousePiece ? 'Included' : 'Not Included'}
-                  </span>
-                </div>
+              {/* Wishlist */}
+              <button 
+                className={`wishlist-btn ${isWishlisted ? 'active' : ''}`}
+                onClick={() => setIsWishlisted(!isWishlisted)}
+                title="Add to Wishlist"
+              >
+                {isWishlisted ? <MdFavorite /> : <MdFavoriteBorder />}
+              </button>
+            </div>
+
+            {product.stock < 10 && product.stock > 0 && (
+              <p className="stock-warning">Only {product.stock} units left in stock!</p>
+            )}
+
+            {/* Trust Badges (Static) */}
+            <div className="trust-grid">
+              <div className="trust-item">
+                <div className="icon-box"><MdVerifiedUser size={20} /></div>
+                <span>Authentic Quality</span>
+              </div>
+              <div className="trust-item">
+                <div className="icon-box"><MdLocalShipping size={20} /></div>
+                <span>Free Shipping</span>
+              </div>
+              <div className="trust-item">
+                <div className="icon-box"><MdCached size={20} /></div>
+                <span>Easy Returns</span>
               </div>
             </div>
-          )}
+
+            <div className="divider"></div>
+
+            {/* Tabs */}
+            <div className="product-tabs">
+              <div className="tabs-header">
+                {['description', 'specifications'].map(tab => (
+                  <button 
+                    key={tab} 
+                    className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
+                    onClick={() => setActiveTab(tab)}
+                  >
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </button>
+                ))}
+              </div>
+              
+              <div className="tab-body">
+                {activeTab === 'description' && (
+                  <div className="desc-content">
+                    <p>{product.description}</p>
+                    {product.highlights && (
+                      <ul className="highlights-list">
+                        {product.highlights.map((hl, i) => <li key={i}>{hl}</li>)}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
+                {activeTab === 'specifications' && (
+                  <table className="specs-table">
+                    <tbody>
+                      {Object.entries(product.specifications || {}).map(([key, val]) => (
+                        <tr key={key}>
+                          <td className="spec-key">{key}</td>
+                          <td className="spec-val">{val.toString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+          </div>
         </div>
       </div>
 
-      {/* Image Zoom Modal */}
-      {showImageZoom && product.images && (
+      {/* Sticky Mobile Footer */}
+      <div className="mobile-footer">
+        <div className="footer-info">
+          <span className="price-label">Total Price</span>
+          <span className="price-val">{formatPrice(product.discountedPrice || product.price)}</span>
+        </div>
+        <button 
+          className="mobile-cta" 
+          onClick={handleAddToCart}
+          disabled={product.stock <= 0}
+        >
+          {product.stock <= 0 ? 'Out of Stock' : 'Add to Cart'}
+        </button>
+      </div>
+
+      {/* Zoom Modal */}
+      {showImageZoom && (
         <div className="zoom-modal" onClick={() => setShowImageZoom(false)}>
-          <button 
-            className="close-zoom"
-            onClick={() => setShowImageZoom(false)}
-            aria-label="Close zoom"
-          >
-            <MdClose size={32} />
-          </button>
-          <img
-            src={product.images[selectedImage]?.url}
-            alt={product.images[selectedImage]?.alt || product.name}
-            className="zoomed-image"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <div className="zoom-thumbnails">
-            {product.images.map((image, index) => (
-              <button
-                key={index}
-                className={`zoom-thumb ${selectedImage === index ? 'active' : ''}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setSelectedImage(index)
-                }}
-              >
-                <img src={image.url} alt={`Thumbnail ${index + 1}`} />
-              </button>
-            ))}
-          </div>
+          <button className="zoom-close"><MdClose size={24} /></button>
+          <img src={product.images[selectedImage]?.url} alt="" onClick={e => e.stopPropagation()} />
         </div>
       )}
 
-      <style jsx>{`
-        .product-details-page {
-          background: #f8f9fa;
+      {/* Styles */}
+      <style>{`
+        :root {
+          --primary: #e11d48;
+          --primary-hover: #be123c;
+          --text-main: #0f172a;
+          --text-muted: #64748b;
+          --bg-page: #f8fafc;
+          --border: #e2e8f0;
+        }
+
+        .product-page {
+          background-color: var(--bg-page);
           min-height: 100vh;
-          padding: 1rem 0;
+          padding-bottom: 90px;
+          font-family: 'Inter', sans-serif;
+          color: var(--text-main);
         }
 
-        /* Breadcrumb */
-        .breadcrumb {
-          max-width: 1400px;
-          margin: 0 auto 1.5rem;
-          padding: 0 1rem;
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          font-size: 0.875rem;
-          color: #6b7280;
-        }
-
-        .breadcrumb a {
-          color: #6b7280;
-          text-decoration: none;
-          transition: color 0.2s;
-        }
-
-        .breadcrumb a:hover {
-          color: #3b82f6;
-        }
-
-        .breadcrumb .separator {
-          color: #d1d5db;
-        }
-
-        .breadcrumb .current {
-          color: #111827;
-          font-weight: 500;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          max-width: 200px;
-        }
-
-        /* Container */
-        .product-details-container {
-          max-width: 1400px;
+        .container {
+          max-width: 1280px;
           margin: 0 auto;
-          padding: 0 1rem;
+          padding: 24px;
+        }
+
+        /* Breadcrumbs */
+        .breadcrumbs {
+          font-size: 13px;
+          color: var(--text-muted);
+          margin-bottom: 24px;
+        }
+        .breadcrumbs a { text-decoration: none; color: var(--text-muted); transition: color 0.2s; }
+        .breadcrumbs a:hover { color: var(--primary); }
+        .breadcrumbs .current { color: var(--text-main); font-weight: 500; }
+
+        /* Grid */
+        .product-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 3rem;
-          background: white;
-          border-radius: 1rem;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-          padding: 2rem;
-        }
-
-        /* Product Gallery */
-        .product-gallery {
-          position: sticky;
-          top: 6rem;
-          height: fit-content;
-        }
-
-        .main-image-container {
-          position: relative;
-          border-radius: 1rem;
-          overflow: hidden;
-          background: #f9fafb;
-          aspect-ratio: 3/4;
-          margin-bottom: 1rem;
-        }
-
-        .main-image {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          cursor: zoom-in;
-          transition: transform 0.3s;
-        }
-
-        .main-image:hover {
-          transform: scale(1.05);
-        }
-
-        .zoom-btn {
-          position: absolute;
-          bottom: 1rem;
-          right: 1rem;
-          background: rgba(255, 255, 255, 0.95);
-          border: none;
-          border-radius: 0.5rem;
-          padding: 0.75rem;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-          transition: all 0.2s;
-        }
-
-        .zoom-btn:hover {
-          background: white;
-          transform: scale(1.1);
-        }
-
-        .discount-badge {
-          position: absolute;
-          top: 1rem;
-          left: 1rem;
-          background: #dc2626;
-          color: white;
-          padding: 0.5rem 1rem;
-          border-radius: 0.5rem;
-          font-weight: 600;
-          font-size: 0.875rem;
-          box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
-        }
-
-        .placeholder-image {
-          width: 100%;
-          height: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: #e5e7eb;
-          color: #6b7280;
-          font-size: 1.125rem;
-        }
-
-        /* Thumbnail List */
-        .thumbnail-list {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-          gap: 0.75rem;
-        }
-
-        .thumbnail {
-          aspect-ratio: 3/4;
-          border-radius: 0.5rem;
-          overflow: hidden;
-          border: 2px solid transparent;
-          cursor: pointer;
-          transition: all 0.2s;
-          background: #f9fafb;
-          padding: 0;
-        }
-
-        .thumbnail img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-        }
-
-        .thumbnail:hover {
-          border-color: #d1d5db;
-        }
-
-        .thumbnail.active {
-          border-color: #3b82f6;
-          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-        }
-
-        /* Product Info */
-        .product-info {
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-
-        .product-header {
-          display: flex;
-          flex-direction: column;
-          gap: 0.75rem;
-        }
-
-        .title-section {
-          display: flex;
+          gap: 48px;
           align-items: start;
-          justify-content: space-between;
-          gap: 1rem;
+        }
+
+        /* Gallery */
+        .gallery-section { position: relative; }
+        .sticky-gallery { position: sticky; top: 100px; }
+        
+        .main-image-wrapper {
           position: relative;
+          border-radius: 16px;
+          overflow: hidden;
+          background: white;
+          aspect-ratio: 3/4;
+          cursor: zoom-in;
+          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+          border: 1px solid var(--border);
         }
-
-        .product-title {
-          font-size: 1.875rem;
+        .main-image { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s; }
+        .main-image-wrapper:hover .main-image { transform: scale(1.05); }
+        
+        .discount-tag {
+          position: absolute;
+          top: 16px; left: 16px;
+          background: var(--primary);
+          color: white;
+          font-size: 12px;
           font-weight: 700;
-          color: #111827;
-          margin: 0;
-          line-height: 1.3;
+          padding: 6px 12px;
+          border-radius: 20px;
         }
-
-        .share-btn {
-          background: #f3f4f6;
+        .zoom-trigger {
+          position: absolute;
+          bottom: 16px; right: 16px;
+          background: white;
           border: none;
-          border-radius: 0.5rem;
-          padding: 0.75rem;
+          border-radius: 50%;
+          width: 40px; height: 40px;
+          display: flex; align-items: center; justify-content: center;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+          color: var(--text-main);
           cursor: pointer;
+          transition: transform 0.2s;
+        }
+        .zoom-trigger:hover { transform: scale(1.1); }
+
+        .thumbnails-grid {
+          display: flex;
+          gap: 12px;
+          margin-top: 16px;
+          overflow-x: auto;
+          padding-bottom: 4px;
+        }
+        .thumbnail {
+          width: 70px; height: 70px;
+          border-radius: 8px;
+          overflow: hidden;
+          cursor: pointer;
+          border: 2px solid transparent;
+          opacity: 0.6;
           transition: all 0.2s;
           flex-shrink: 0;
         }
+        .thumbnail.active { border-color: var(--primary); opacity: 1; }
+        .thumbnail img { width: 100%; height: 100%; object-fit: cover; }
 
-        .share-btn:hover {
-          background: #e5e7eb;
+        /* Details */
+        .product-header .title {
+          font-family: 'Playfair Display', serif;
+          font-size: 32px;
+          font-weight: 700;
+          margin-bottom: 8px;
+          line-height: 1.2;
         }
+        .subtitle { font-size: 16px; color: var(--text-muted); line-height: 1.5; }
 
-        .share-menu {
-          position: absolute;
-          top: 100%;
-          right: 0;
+        .price-box { margin-top: 24px; }
+        .price-row { display: flex; align-items: baseline; gap: 12px; }
+        .final-price { font-size: 28px; font-weight: 700; color: var(--text-main); }
+        .mrp { font-size: 18px; text-decoration: line-through; color: var(--text-muted); }
+        .tax-note { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+        .divider { height: 1px; background: var(--border); margin: 32px 0; }
+
+        /* Selectors */
+        .selectors-container { display: flex; flex-direction: column; gap: 24px; }
+        .label-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; font-weight: 600; }
+        .selected-value { color: var(--text-muted); font-weight: 400; margin-left: 8px; }
+        
+        .options-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+        .size-btn {
+          min-width: 48px; height: 40px;
+          padding: 0 16px;
           background: white;
-          border: 1px solid #e5e7eb;
-          border-radius: 0.5rem;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-          margin-top: 0.5rem;
-          z-index: 10;
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 500;
+          color: var(--text-main);
+          cursor: pointer;
+          transition: all 0.2s;
         }
+        .size-btn:hover { border-color: var(--text-muted); }
+        .size-btn.selected { background: var(--text-main); color: white; border-color: var(--text-main); }
 
-        .share-menu button {
-          display: block;
-          width: 100%;
-          padding: 0.75rem 1.25rem;
-          background: none;
-          border: none;
-          text-align: left;
+        .colors-row { display: flex; gap: 12px; }
+        .color-dot {
+          width: 32px; height: 32px;
+          border-radius: 50%;
+          border: 2px solid white;
+          box-shadow: 0 0 0 1px var(--border);
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .color-dot:hover { transform: scale(1.1); }
+        .color-dot.selected { box-shadow: 0 0 0 2px var(--primary); }
+
+        /* Actions */
+        .actions-desktop { display: flex; gap: 16px; margin-top: 32px; height: 50px; }
+        
+        .qty-wrapper {
+          display: flex; align-items: center;
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          background: white;
+          overflow: hidden;
+        }
+        .qty-wrapper button {
+          width: 40px; height: 100%;
+          border: none; background: transparent;
+          font-size: 18px; color: var(--text-muted);
           cursor: pointer;
           transition: background 0.2s;
-          white-space: nowrap;
         }
+        .qty-wrapper button:hover { background: #f1f5f9; color: var(--text-main); }
+        .qty-val { width: 40px; text-align: center; font-weight: 600; }
 
-        .share-menu button:hover {
-          background: #f9fafb;
-        }
-
-        /* Ratings */
-        .product-ratings {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-        }
-
-        .stars {
-          display: flex;
-          gap: 0.125rem;
-        }
-
-        .star {
-          color: #d1d5db;
-          width: 20px;
-          height: 20px;
-        }
-
-        .star.filled {
-          color: #fbbf24;
-        }
-
-        .rating-text {
-          font-size: 0.875rem;
-          color: #6b7280;
-        }
-
-        /* Price Section */
-        .price-section {
-          background: #f9fafb;
-          padding: 1.25rem;
-          border-radius: 0.75rem;
-        }
-
-        .price-group {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-          flex-wrap: wrap;
-        }
-
-        .price-current {
-          font-size: 2rem;
-          font-weight: 700;
-          color: #111827;
-        }
-
-        .price-original {
-          font-size: 1.25rem;
-          color: #9ca3af;
-          text-decoration: line-through;
-        }
-
-        .discount-tag {
-          background: #dcfce7;
-          color: #166534;
-          padding: 0.375rem 0.75rem;
-          border-radius: 0.375rem;
-          font-size: 0.875rem;
+        .add-to-cart-btn {
+          flex: 1;
+          background: var(--text-main);
+          color: white;
+          border: none;
+          border-radius: 8px;
+          font-size: 16px;
           font-weight: 600;
+          cursor: pointer;
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+          transition: background 0.2s;
         }
+        .add-to-cart-btn:hover { background: #1e293b; }
+        .add-to-cart-btn:disabled { background: #94a3b8; cursor: not-allowed; }
 
-        .tax-info {
-          margin: 0.5rem 0 0 0;
-          font-size: 0.813rem;
-          color: #6b7280;
+        .wishlist-btn {
+          width: 50px;
+          border: 1px solid var(--border);
+          background: white;
+          border-radius: 8px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 24px; color: var(--text-muted);
+          cursor: pointer;
+          transition: all 0.2s;
         }
+        .wishlist-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .wishlist-btn.active { color: var(--primary); border-color: var(--primary); background: #fff1f2; }
 
-        /* Stock Status */
-        .stock-status {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          font-size: 0.875rem;
-          font-weight: 500;
-        }
-
-        .stock-status.in-stock {
-          color: #059669;
-        }
-
-        .stock-status.out-of-stock {
-          color: #dc2626;
-        }
-
-        .status-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: currentColor;
-          animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
+        .stock-warning { font-size: 13px; color: #dc2626; font-weight: 500; margin-top: 12px; }
 
         /* Trust Badges */
-        .trust-badges {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-          gap: 1rem;
-          padding: 1.5rem;
-          background: #f9fafb;
-          border-radius: 0.75rem;
+        .trust-grid {
+          display: grid; grid-template-columns: repeat(3, 1fr);
+          gap: 16px; margin-top: 32px;
         }
-
-        .badge {
-          display: flex;
-          gap: 0.75rem;
-          align-items: start;
+        .trust-item {
+          display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px;
         }
-
-        .badge svg {
-          color: #3b82f6;
-          flex-shrink: 0;
-          margin-top: 0.125rem;
-        }
-
-        .badge-text {
-          display: flex;
-          flex-direction: column;
-          gap: 0.125rem;
-        }
-
-        .badge-text strong {
-          font-size: 0.875rem;
-          color: #111827;
-        }
-
-        .badge-text span {
-          font-size: 0.75rem;
-          color: #6b7280;
-        }
-
-        /* Divider */
-        .divider {
-          height: 1px;
-          background: #e5e7eb;
-          margin: 0.5rem 0;
-        }
-
-        /* Option Selector */
-        .option-selector {
-          display: flex;
-          flex-direction: column;
-          gap: 0.75rem;
-        }
-
-        .option-label {
-          font-size: 0.938rem;
-          font-weight: 600;
-          color: #111827;
-        }
-
-        .selected-value {
-          color: #3b82f6;
-          font-weight: 400;
-        }
-
-        /* Size Options */
-        .size-options {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.75rem;
-        }
-
-        .size-btn {
-          min-width: 3.5rem;
-          padding: 0.75rem 1.25rem;
-          background: white;
-          border: 2px solid #e5e7eb;
-          border-radius: 0.5rem;
-          font-size: 0.938rem;
-          font-weight: 500;
-          color: #374151;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .size-btn:hover {
-          border-color: #3b82f6;
-        }
-
-        .size-btn.active {
-          background: #3b82f6;
-          border-color: #3b82f6;
-          color: white;
-        }
-
-        /* Color Options */
-        .color-options {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.75rem;
-        }
-
-        .color-btn {
-          width: 3rem;
-          height: 3rem;
+        .icon-box {
+          width: 40px; height: 40px;
+          background: #f1f5f9;
           border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          color: var(--text-main);
+        }
+        .trust-item span { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+
+        /* Tabs */
+        .product-tabs { margin-top: 16px; }
+        .tabs-header { display: flex; gap: 32px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+        .tab-btn {
+          background: none; border: none;
+          padding: 12px 0;
+          font-size: 15px; font-weight: 600;
+          color: var(--text-muted);
           cursor: pointer;
+          border-bottom: 2px solid transparent;
           transition: all 0.2s;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-          padding: 0;
         }
+        .tab-btn.active { color: var(--text-main); border-bottom-color: var(--text-main); }
+        
+        .tab-body { font-size: 15px; line-height: 1.7; color: var(--text-muted); }
+        .highlights-list { padding-left: 20px; margin-top: 16px; }
+        .specs-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .specs-table td { padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+        .spec-key { color: var(--text-muted); width: 40%; }
+        .spec-val { color: var(--text-main); font-weight: 500; }
 
-        .color-btn:hover {
-          transform: scale(1.1);
+        /* Mobile Footer */
+        .mobile-footer {
+          display: none;
+          position: fixed; bottom: 0; left: 0; right: 0;
+          background: white;
+          padding: 12px 24px;
+          box-shadow: 0 -4px 20px rgba(0,0,0,0.05);
+          z-index: 100;
+          align-items: center; justify-content: space-between;
+          border-top: 1px solid var(--border);
         }
-
-        .check-mark {
+        .price-label { font-size: 12px; color: var(--text-muted); display: block; }
+        .price-val { font-size: 20px; font-weight: 700; color: var(--text-main); }
+        .mobile-cta {
+          background: var(--text-main);
           color: white;
-          font-size: 1.25rem;
-          font-weight: 700;
-          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        }
-
-        /* Quantity Controls */
-        .quantity-controls {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          width: fit-content;
-        }
-
-        .qty-btn {
-          width: 2.5rem;
-          height: 2.5rem;
-          background: #f3f4f6;
-          border: 1px solid #e5e7eb;
-          border-radius: 0.5rem;
-          font-size: 1.25rem;
+          border: none;
+          padding: 12px 32px;
+          border-radius: 8px;
           font-weight: 600;
-          color: #374151;
-          cursor: pointer;
-          transition: all 0.2s;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          font-size: 16px;
         }
 
-        .qty-btn:hover:not(:disabled) {
-          background: #e5e7eb;
+        /* Toast */
+        .toast-notification {
+          position: fixed; top: 90px; right: 24px;
+          background: #1e293b; color: white;
+          padding: 12px 20px; border-radius: 8px;
+          display: flex; align-items: center; gap: 12px;
+          font-size: 14px; font-weight: 500;
+          z-index: 2000; animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+        }
+        .toast-notification.error { background: #ef4444; }
+        @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        /* Zoom */
+        .zoom-modal {
+          position: fixed; inset: 0; background: rgba(255,255,255,0.98);
+          z-index: 3000; display: flex; align-items: center; justify-content: center;
+        }
+        .zoom-modal img { max-width: 95%; max-height: 95vh; object-fit: contain; }
+        .zoom-close {
+          position: absolute; top: 24px; right: 24px;
+          background: none; border: none; cursor: pointer;
+          width: 48px; height: 48px; border-radius: 50%;
+          background: #f1f5f9; color: var(--text-main);
+          display: flex; align-items: center; justify-content: center;
         }
 
-        .qty-btn:disabled {
-          opacity: 0.4;
-          cursor: not-allowed;
+        /* Responsive */
+        @media (max-width: 900px) {
+          .container { padding: 16px; }
+          .product-grid { grid-template-columns: 1fr; gap: 32px; }
+          .gallery-section { padding-bottom: 0; }
+          .sticky-gallery { position: relative; top: 0; }
+          .details-section { padding-bottom: 20px; }
+          
+          /* Hide Desktop Actions */
+          .actions-desktop { display: none; }
+          
+          /* Show Mobile Footer */
+          .mobile-footer { display: flex; }
+          
+          .trust-grid { margin-top: 0; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+          .title { font-size: 24px; }
         }
-
-        .qty-input {
-          width: 4rem;
-          height: 2.5rem;
-          text-align: center;
-          border: 1px solid #e5e7eb;
-          border-radius: 0.5rem;
-          font-size: 1rem;
-          font-weight: 600;
-        }
-
-        .qty-input:focus {
-          outline: none;
-          border-color: #3b82f6;
-        }
-
-        /* Product Actions */
-        .product-actions {
-          display: grid;
-          grid-template-columns: 1fr auto;
-      }
-          `}</style>
+      `}</style>
     </div>
   )
 }

@@ -1,66 +1,377 @@
-import { Link } from 'react-router-dom'
-import { MdShoppingCart, MdPerson, MdSearch, MdMenu, MdClose } from 'react-icons/md'
-import { useContext } from 'react'
+import React, { useState, useEffect, useContext, useRef } from 'react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { 
+  MdShoppingCart, MdPerson, MdSearch, MdMenu, MdClose, 
+  MdLogout, MdDashboard, MdShoppingBag
+} from 'react-icons/md'
+import { motion, AnimatePresence } from 'framer-motion'
 import { AuthContext } from '../context/AuthContext'
 import { CartContext } from '../context/CartContext'
 
-const Navbar = ({ appName }) => {
+const Navbar = ({ appName = "Luxe Sarees" }) => {
   const { user, logout } = useContext(AuthContext)
-  const { itemCount } = useContext(CartContext)
+  const { itemCount } = useContext(CartContext) || { itemCount: 0 }
+  
+  const navigate = useNavigate()
+  const location = useLocation()
+  const dropdownRef = useRef(null)
+
+  // --- State ---
+  const [isVisible, setIsVisible] = useState(true) // For scroll hide/show
+  const [lastScrollY, setLastScrollY] = useState(0)
+  const [isScrolled, setIsScrolled] = useState(false) // For background style
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+
+  // --- Scroll Logic (The Magic) ---
+  useEffect(() => {
+    const controlNavbar = () => {
+      const currentScrollY = window.scrollY
+
+      // Determine background style
+      setIsScrolled(currentScrollY > 20)
+
+      // Determine visibility (Hide on down, Show on up)
+      if (currentScrollY > lastScrollY && currentScrollY > 100 && !mobileMenuOpen) {
+        setIsVisible(false) // Scroll Down -> Hide
+      } else {
+        setIsVisible(true)  // Scroll Up -> Show
+      }
+
+      setLastScrollY(currentScrollY)
+    }
+
+    window.addEventListener('scroll', controlNavbar)
+    return () => window.removeEventListener('scroll', controlNavbar)
+  }, [lastScrollY, mobileMenuOpen])
+
+  // --- Navigation Resets ---
+  useEffect(() => {
+    setMobileMenuOpen(false)
+    setShowUserMenu(false)
+    setMobileSearchOpen(false)
+  }, [location])
+
+  // --- Click Outside User Menu ---
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowUserMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // --- Handlers ---
+  const handleSearch = (e) => {
+    e.preventDefault()
+    if (searchQuery.trim()) {
+      navigate(`/products?search=${encodeURIComponent(searchQuery.trim())}`)
+      setMobileSearchOpen(false)
+    }
+  }
 
   return (
-    <nav className="navbar">
-      <div className="navbar-container">
-        {/* Logo */}
-        <Link to="/" className="navbar-logo">
-          <h1>{appName}</h1>
-        </Link>
+    <>
+      {/* --- Main Header --- */}
+      <header 
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 transform 
+          ${isVisible ? 'translate-y-0' : '-translate-y-full'}
+          ${isScrolled ? 'bg-white/95 backdrop-blur-md shadow-sm py-3' : 'bg-white border-b border-gray-100 py-4'}
+        `}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between gap-4 h-10">
+            
+            {/* 1. LEFT: Hamburger (Mobile) & Logo */}
+            <div className="flex items-center gap-3">
+              <button 
+                className="lg:hidden p-2 -ml-2 text-slate-600 hover:text-rose-600 transition-colors rounded-full active:bg-slate-100"
+                onClick={() => setMobileMenuOpen(true)}
+                aria-label="Open Menu"
+              >
+                <MdMenu size={26} />
+              </button>
 
-        {/* Search Bar */}
-        <div className="navbar-search">
-          <input type="text" placeholder="Search sarees..." />
-          <button className="search-btn">
-            <MdSearch size={20} />
-          </button>
-        </div>
-
-        {/* Navigation Links */}
-        <div className="navbar-links">
-          <Link to="/" className="nav-link">Home</Link>
-          <Link to="/products" className="nav-link">Shop</Link>
-        </div>
-
-        {/* User Actions */}
-        <div className="navbar-actions">
-          {/* Cart */}
-          <Link to="/cart" className="nav-action">
-            <MdShoppingCart size={24} />
-            {itemCount > 0 && <span className="cart-badge">{itemCount}</span>}
-          </Link>
-
-          {/* User */}
-          {user ? (
-            <div className="user-menu">
-              <Link to={user.role === 'admin' ? '/admin' : '/orders'} className="nav-action">
-                <MdPerson size={24} />
+              <Link to="/" className="flex items-center gap-2 group">
+                <h1 className="font-serif text-2xl font-bold tracking-tight text-slate-900 group-hover:text-rose-600 transition-colors">
+                  {appName}
+                </h1>
               </Link>
-              <button onClick={logout} className="logout-btn">Logout</button>
             </div>
-          ) : (
-            <div className="auth-buttons">
-              <Link to="/login" className="btn btn-secondary">Login</Link>
-              <Link to="/register" className="btn btn-primary">Register</Link>
-            </div>
-          )}
-        </div>
 
-        {/* Mobile Menu Toggle */}
-        <button className="mobile-menu-toggle">
-          <MdMenu size={24} />
-        </button>
-      </div>
-    </nav>
+            {/* 2. CENTER: Desktop Nav & Search */}
+            <div className="hidden lg:flex items-center flex-1 justify-center gap-8 px-8">
+              <nav className="flex items-center gap-8 font-medium text-sm text-slate-600">
+                <NavLink to="/">Home</NavLink>
+                <NavLink to="/products">Collection</NavLink>
+              </nav>
+
+              <form onSubmit={handleSearch} className="relative w-full max-w-sm group">
+                <input 
+                  type="text" 
+                  placeholder="Search for sarees..." 
+                  className="w-full pl-10 pr-4 py-2.5 rounded-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-rose-300 focus:ring-4 focus:ring-rose-50 outline-none transition-all text-sm placeholder:text-slate-400"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                <MdSearch className="absolute left-3.5 top-3 text-slate-400 group-focus-within:text-rose-500 transition-colors" size={20} />
+              </form>
+            </div>
+
+            {/* 3. RIGHT: Actions */}
+            <div className="flex items-center gap-1 sm:gap-2">
+              
+              {/* Mobile Search Toggle */}
+              <button 
+                onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
+                className={`lg:hidden p-2.5 rounded-full transition-colors ${mobileSearchOpen ? 'bg-rose-50 text-rose-600' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <MdSearch size={24} />
+              </button>
+
+              {/* Cart Icon */}
+<Link
+  to="/cart"
+  className="flex items-center gap-2 relative px-3 py-2 text-slate-700 hover:text-rose-600 transition-colors group"
+>
+  <MdShoppingCart size={24} />
+    <span className="text-sm font-medium whitespace-nowrap">
+      My Cart
+    </span>
+</Link>
+
+              {/* User Menu (Desktop + Mobile Dropdown) */}
+              <div className="relative" ref={dropdownRef}>
+                {user ? (
+                  <>
+                    <button 
+                      onClick={() => setShowUserMenu(!showUserMenu)}
+                      className="flex items-center gap-2 p-1 pl-2 rounded-full hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-200 ml-1"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-100 to-rose-200 flex items-center justify-center text-rose-700 font-bold text-sm shadow-inner">
+                        {user.name?.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="hidden md:block text-sm font-medium text-slate-700 max-w-[80px] truncate pr-2">
+                        {user.name.split(' ')[0]}
+                      </span>
+                    </button>
+
+                    {/* Dropdown Menu */}
+                    <AnimatePresence>
+                      {showUserMenu && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                          transition={{ duration: 0.2 }}
+                          className="absolute right-0 top-full mt-2 w-60 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 ring-1 ring-black/5"
+                        >
+                          <div className="px-5 py-4 border-b border-slate-50 bg-slate-50/50">
+                            <p className="text-sm font-bold text-slate-900 truncate">{user.name}</p>
+                            <p className="text-xs text-slate-500 truncate mt-0.5">{user.email}</p>
+                          </div>
+                          
+                          <div className="py-2">
+                            {user.role === 'admin' ? (
+                              <DropdownItem to="/admin" icon={<MdDashboard size={18}/>} label="Admin Dashboard" />
+                            ) : (
+                              <DropdownItem to="/profile" icon={<MdPerson size={18}/>} label="My Profile" />
+                            )}
+                            <DropdownItem to="/orders" icon={<MdShoppingBag size={18}/>} label="My Orders" />
+                          </div>
+
+                          <div className="border-t border-slate-50 pt-1 pb-1">
+                            <button 
+                              onClick={logout}
+                              className="w-full flex items-center px-5 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors font-medium"
+                            >
+                              <MdLogout className="mr-3" size={18} />
+                              Sign Out
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </>
+                ) : (
+                  <div className="hidden sm:flex items-center gap-2 ml-2">
+                    <Link to="/login" className="text-sm font-medium px-5 py-2.5 rounded-full text-slate-600 hover:bg-slate-100 transition-colors">
+                      Login
+                    </Link>
+                    <Link to="/register" className="text-sm font-medium px-5 py-2.5 rounded-full bg-slate-900 text-white hover:bg-rose-600 hover:shadow-lg hover:shadow-rose-600/20 transition-all">
+                      Register
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 4. Mobile Search Bar (Expandable) */}
+          <AnimatePresence>
+            {mobileSearchOpen && (
+              <motion.div 
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="lg:hidden overflow-hidden"
+              >
+                <form onSubmit={handleSearch} className="pb-4 pt-2">
+                   <div className="relative">
+                    <input 
+                      type="text" 
+                      placeholder="Search collection..." 
+                      autoFocus
+                      className="w-full pl-11 pr-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-rose-300 outline-none text-sm shadow-inner"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                    <MdSearch className="absolute left-4 top-3.5 text-slate-400" size={20} />
+                   </div>
+                </form>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </header>
+
+      {/* --- Mobile Sidebar / Drawer --- */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 lg:hidden"
+              onClick={() => setMobileMenuOpen(false)}
+            />
+            
+            {/* Drawer Content */}
+            <motion.aside 
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="fixed top-0 left-0 bottom-0 w-[85%] max-w-xs bg-white z-[60] shadow-2xl lg:hidden flex flex-col"
+            >
+              <div className="p-5 flex items-center justify-between border-b border-slate-100 bg-slate-50/50">
+                <span className="font-serif text-xl font-bold text-slate-900">{appName}</span>
+                <button 
+                  onClick={() => setMobileMenuOpen(false)} 
+                  className="p-2 -mr-2 text-slate-400 hover:text-slate-900 rounded-full hover:bg-slate-100 transition-colors"
+                >
+                  <MdClose size={24} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto py-6 px-4">
+                <nav className="space-y-1">
+                  <MobileLink to="/" onClick={() => setMobileMenuOpen(false)}>Home</MobileLink>
+                  <MobileLink to="/products" onClick={() => setMobileMenuOpen(false)}>Shop Collection</MobileLink>
+                  <MobileLink to="/cart" onClick={() => setMobileMenuOpen(false)}>
+                    Cart 
+                  </MobileLink>
+                </nav>
+                
+                <div className="my-6 border-t border-slate-100" />
+                
+                <div className="space-y-1">
+                  {user ? (
+                    <>
+                      <div className="px-4 py-2 mb-2">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Account</span>
+                      </div>
+                      <MobileLink to="/profile" onClick={() => setMobileMenuOpen(false)} icon={<MdPerson />}>Profile</MobileLink>
+                      <MobileLink to="/orders" onClick={() => setMobileMenuOpen(false)} icon={<MdShoppingBag />}>Orders</MobileLink>
+                      <button 
+                        onClick={() => { logout(); setMobileMenuOpen(false); }}
+                        className="w-full flex items-center px-4 py-3.5 text-red-600 hover:bg-red-50 rounded-xl transition-colors font-medium text-sm mt-2"
+                      >
+                         <MdLogout className="mr-3 text-lg opacity-70" /> Sign Out
+                      </button>
+                    </>
+                  ) : (
+                    <div className="flex flex-col gap-3 mt-4">
+                      <Link 
+                        to="/login" 
+                        onClick={() => setMobileMenuOpen(false)} 
+                        className="flex items-center justify-center py-3.5 border border-slate-200 rounded-xl font-semibold text-slate-700 active:bg-slate-50"
+                      >
+                        Login
+                      </Link>
+                      <Link 
+                        to="/register" 
+                        onClick={() => setMobileMenuOpen(false)} 
+                        className="flex items-center justify-center py-3.5 bg-slate-900 text-white rounded-xl font-semibold active:bg-slate-800 shadow-lg shadow-slate-900/10"
+                      >
+                        Register
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   )
 }
+
+// --- Sub-Components ---
+
+const NavLink = ({ to, children }) => {
+  const location = useLocation()
+  const isActive = location.pathname === to
+  return (
+    <Link 
+      to={to} 
+      className={`relative py-1 transition-colors ${isActive ? 'text-rose-600 font-semibold' : 'hover:text-slate-900'}`}
+    >
+      {children}
+      {isActive && (
+        <motion.span 
+          layoutId="underline" 
+          className="absolute bottom-0 left-0 w-full h-0.5 bg-rose-600 rounded-full" 
+        />
+      )}
+    </Link>
+  )
+}
+
+const MobileLink = ({ to, children, onClick, icon }) => {
+  const location = useLocation()
+  const isActive = location.pathname === to
+  return (
+    <Link 
+      to={to} 
+      onClick={onClick}
+      className={`flex items-center px-4 py-3.5 rounded-xl transition-all ${
+        isActive 
+          ? 'bg-rose-50 text-rose-700 font-semibold' 
+          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+      }`}
+    >
+      {icon && <span className="mr-3 text-lg opacity-70">{icon}</span>}
+      {children}
+    </Link>
+  )
+}
+
+const DropdownItem = ({ to, icon, label }) => (
+  <Link 
+    to={to} 
+    className="flex items-center px-5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 hover:text-rose-600 transition-colors"
+  >
+    <span className="mr-3 text-slate-400 group-hover:text-rose-500">{icon}</span>
+    {label}
+  </Link>
+)
 
 export default Navbar

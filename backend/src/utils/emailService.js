@@ -52,61 +52,74 @@ const createTransporter = () => {
 
 const transporter = createTransporter();
 
+// Helper for currency formatting inside templates
+const formatCurrency = (amount) => `₹${amount.toLocaleString('en-IN')}`;
+
 // Email templates
 const emailTemplates = {
   adminNotification: (order) => ({
-    subject: `New Order Received - ${order.orderNumber}`,
+    subject: `[New Order] #${order.orderNumber} - ₹${order.totalAmount}`,
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <h2 style="color: #333;">New Order Received</h2>
-        <p><strong>Order Number:</strong> ${order.orderNumber}</p>
-        <p><strong>Customer:</strong> ${order.shippingAddress?.name || 'N/A'}</p>
-        <p><strong>Email:</strong> ${order.user?.email || order.customerEmail || 'N/A'}</p>
-        <p><strong>Phone:</strong> ${order.shippingAddress?.phone || order.customerPhone || 'N/A'}</p>
-        <p><strong>Total Amount:</strong> ₹${order.totalAmount}</p>
-        <p><strong>Payment Method:</strong> ${(order.paymentMethod || '').toUpperCase()}</p>
-        <p><strong>Status:</strong> ${order.status}</p>
+      <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333; border: 1px solid #e0e0e0;">
+        <div style="background-color: #333; padding: 15px; text-align: center;">
+          <h2 style="color: #fff; margin: 0; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">Admin Notification</h2>
+        </div>
+        
+        <div style="padding: 20px;">
+          <h3 style="border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; margin-top: 0;">Order Summary</h3>
+          <table style="width: 100%; font-size: 14px; margin-bottom: 20px;">
+            <tr><td style="padding: 5px 0; color: #666;">Order ID:</td><td style="font-weight: bold;">${order.orderNumber}</td></tr>
+            <tr><td style="padding: 5px 0; color: #666;">Date:</td><td>${new Date(order.createdAt).toLocaleDateString()}</td></tr>
+            <tr><td style="padding: 5px 0; color: #666;">Customer:</td><td>${order.shippingAddress?.name || 'Guest'}</td></tr>
+            <tr><td style="padding: 5px 0; color: #666;">Email:</td><td>${order.user?.email || order.customerEmail}</td></tr>
+            <tr><td style="padding: 5px 0; color: #666;">Total:</td><td style="color: #2e7d32; font-weight: bold;">${formatCurrency(order.totalAmount)}</td></tr>
+          </table>
 
-        <h3>Items</h3>
-        <ul>
-          ${(order.items || []).map(i => `<li>${i.name} × ${i.quantity} (₹${i.price})</li>`).join('')}
-        </ul>
-
-        ${order.shippingAddress ? `
-          <h3>Shipping Address</h3>
-          <p>
-            ${order.shippingAddress.address}<br>
-            ${order.shippingAddress.city}, ${order.shippingAddress.state} - ${order.shippingAddress.pincode}
-          </p>
-        ` : ''}
+          <h3 style="border-bottom: 2px solid #f0f0f0; padding-bottom: 10px;">Order Items</h3>
+          <ul style="padding-left: 20px; font-size: 14px; line-height: 1.6;">
+            ${(order.items || []).map(i => `
+              <li>
+                <strong>${i.name}</strong> 
+                <br><span style="color: #666;">Qty: ${i.quantity} | Color: ${i.selectedColor || 'N/A'}</span>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
       </div>
     `
   }),
 
   paymentConfirmed: (order) => ({
-    subject: `Payment Confirmed - ${order.orderNumber}`,
+    subject: `Payment Receipt - ${order.orderNumber}`,
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background-color: #f8f9fa; padding: 20px; text-align: center;">
-          <h1 style="color: #333; margin: 0;">SareeWeb</h1>
-          <p style="color: #666; margin: 5px 0 0 0;">Traditional Indian Sarees</p>
+      <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; background-color: #ffffff;">
+        <div style="background-color: #f8f9fa; padding: 30px; text-align: center; border-bottom: 1px solid #e0e0e0;">
+          <h1 style="color: #333; margin: 0; font-family: serif;">SareeWeb</h1>
+          <p style="color: #666; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; margin-top: 5px;">Payment Success</p>
         </div>
 
-        <div style="padding: 20px;">
-          <h2 style="color: #333;">Payment Confirmed</h2>
-          <p>Dear ${order.shippingAddress?.name || 'Customer'},</p>
-          <p>We have successfully received your payment for order <strong>${order.orderNumber}</strong>.</p>
+        <div style="padding: 30px;">
+          <p style="font-size: 16px; line-height: 1.5; color: #333;">
+            Dear <strong>${order.shippingAddress?.name || 'Customer'}</strong>,<br><br>
+            We confirm that your payment for order <strong>${order.orderNumber}</strong> has been successfully processed.
+          </p>
 
-          <div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; margin: 20px 0;">
-            <p style="margin: 0;"><strong>Amount Paid:</strong> ₹${order.totalAmount}</p>
-            <p style="margin: 5px 0 0 0;"><strong>Payment Method:</strong> ${(order.paymentMethod || '').toUpperCase()}</p>
+          <div style="background-color: #f1f8e9; border: 1px solid #c5e1a5; padding: 20px; margin: 25px 0; border-radius: 4px;">
+            <table style="width: 100%;">
+              <tr>
+                <td style="color: #33691e; font-weight: bold; font-size: 18px;">Total Paid</td>
+                <td style="text-align: right; color: #33691e; font-weight: bold; font-size: 18px;">${formatCurrency(order.totalAmount)}</td>
+              </tr>
+              <tr>
+                <td style="color: #558b2f; font-size: 13px; padding-top: 5px;">Payment Method</td>
+                <td style="text-align: right; color: #558b2f; font-size: 13px; padding-top: 5px; text-transform: uppercase;">${order.paymentMethod}</td>
+              </tr>
+            </table>
           </div>
 
-          <p>We will start processing your order and will notify you when it ships.</p>
-
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.FRONTEND_URL}/orders/${order._id}" style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">View Your Order</a>
-          </div>
+          <p style="color: #666; font-size: 13px; text-align: center;">
+            This email serves as your official payment receipt.
+          </p>
         </div>
       </div>
     `
@@ -115,72 +128,96 @@ const emailTemplates = {
   orderConfirmation: (order) => ({
     subject: `Order Confirmation - ${order.orderNumber}`,
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background-color: #f8f9fa; padding: 20px; text-align: center;">
-          <h1 style="color: #333; margin: 0;">SareeWeb</h1>
-          <p style="color: #666; margin: 5px 0 0 0;">Traditional Indian Sarees</p>
+      <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; background-color: #ffffff;">
+        
+        <div style="background-color: #f8f9fa; padding: 30px 20px; text-align: center; border-bottom: 1px solid #eee;">
+          <h1 style="color: #1a1a1a; margin: 0; font-family: serif; font-size: 28px;">SareeWeb</h1>
+          <p style="color: #666; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; margin: 5px 0 0 0;">Order Acknowledgment</p>
         </div>
         
-        <div style="padding: 20px;">
-          <h2 style="color: #333;">Order Confirmation</h2>
-          <p>Dear ${order.shippingAddress.name},</p>
-          <p>Thank you for your order! We have received your order and will process it shortly.</p>
+        <div style="padding: 30px 20px;">
+          <p style="color: #333; font-size: 15px; margin-bottom: 25px;">
+            Hello <strong>${order.shippingAddress.name}</strong>,<br><br>
+            Thank you for shopping with us. We have received your order and are getting it ready for shipment. Below are your order details.
+          </p>
           
-          <div style="background-color: #f8f9fa; padding: 15px; margin: 20px 0;">
-            <h3 style="margin: 0 0 10px 0;">Order Details</h3>
-            <p><strong>Order Number:</strong> ${order.orderNumber}</p>
-            <p><strong>Order Date:</strong> ${new Date(order.createdAt).toLocaleDateString()}</p>
-            <p><strong>Total Amount:</strong> ₹${order.totalAmount}</p>
-            <p><strong>Payment Method:</strong> ${order.paymentMethod.toUpperCase()}</p>
-            <p><strong>Status:</strong> ${order.status}</p>
-          </div>
-          
-          <h3 style="color: #333;">Items Ordered</h3>
-          <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
-            <thead>
-              <tr style="background-color: #f8f9fa;">
-                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Item</th>
-                <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Qty</th>
-                <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Price</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${order.items.map(item => `
-                <tr>
-                  <td style="border: 1px solid #ddd; padding: 8px;">
-                    ${item.name}<br>
-                    <small style="color: #666;">
-                      ${item.selectedColor ? `Color: ${item.selectedColor}` : ''}
-                      ${item.selectedSize ? ` | Size: ${item.selectedSize}` : ''}
-                    </small>
-                  </td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.quantity}</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">₹${item.price}</td>
-                </tr>
-              `).join('')}
-            </tbody>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 14px;">
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 10px 0; color: #666;">Order Number:</td>
+              <td style="padding: 10px 0; text-align: right; font-weight: bold; color: #333;">${order.orderNumber}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 10px 0; color: #666;">Order Date:</td>
+              <td style="padding: 10px 0; text-align: right; color: #333;">${new Date(order.createdAt).toLocaleDateString()}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+              <td style="padding: 10px 0; color: #666;">Payment Status:</td>
+              <td style="padding: 10px 0; text-align: right; color: #333; text-transform: capitalize;">${order.paymentStatus}</td>
+            </tr>
           </table>
-          
-          <div style="text-align: right; margin: 20px 0;">
-            <p><strong>Subtotal:</strong> ₹${order.subtotal}</p>
-            ${order.discount > 0 ? `<p><strong>Discount:</strong> -₹${order.discount}</p>` : ''}
-            <p><strong>Shipping:</strong> ₹${order.shippingCost}</p>
-            ${order.tax > 0 ? `<p><strong>Tax:</strong> ₹${order.tax}</p>` : ''}
-            <p style="font-size: 18px; font-weight: bold;"><strong>Total:</strong> ₹${order.totalAmount}</p>
+
+          <div style="border: 1px solid #eee; border-radius: 4px; overflow: hidden; margin-bottom: 25px;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead style="background-color: #f8f9fa;">
+                <tr>
+                  <th style="padding: 12px; text-align: left; font-size: 12px; text-transform: uppercase; color: #666; border-bottom: 1px solid #eee;">Item Details</th>
+                  <th style="padding: 12px; text-align: right; font-size: 12px; text-transform: uppercase; color: #666; border-bottom: 1px solid #eee;">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${order.items.map(item => `
+                  <tr>
+                    <td style="padding: 15px 12px; border-bottom: 1px solid #eee;">
+                      <div style="color: #333; font-weight: bold; font-size: 14px;">${item.name}</div>
+                      <div style="color: #777; font-size: 12px; margin-top: 4px;">
+                        Qty: ${item.quantity} 
+                        ${item.selectedColor ? `| Color: ${item.selectedColor}` : ''}
+                        ${item.selectedSize ? `| Size: ${item.selectedSize}` : ''}
+                      </div>
+                    </td>
+                    <td style="padding: 15px 12px; text-align: right; border-bottom: 1px solid #eee; font-size: 14px; color: #333;">
+                      ${formatCurrency(item.price * item.quantity)}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
           </div>
-          
-          <h3 style="color: #333;">Shipping Address</h3>
-          <div style="background-color: #f8f9fa; padding: 15px;">
-            <p style="margin: 0;"><strong>${order.shippingAddress.name}</strong></p>
-            <p style="margin: 5px 0;">${order.shippingAddress.address}</p>
-            <p style="margin: 5px 0;">${order.shippingAddress.city}, ${order.shippingAddress.state} - ${order.shippingAddress.pincode}</p>
-            <p style="margin: 5px 0;"><strong>Phone:</strong> ${order.shippingAddress.phone}</p>
+
+          <table style="width: 100%; font-size: 14px; margin-bottom: 30px;">
+            <tr>
+              <td style="padding: 5px 0; color: #666; text-align: right;">Subtotal:</td>
+              <td style="padding: 5px 0 5px 20px; text-align: right; width: 100px;">${formatCurrency(order.subtotal || order.totalAmount)}</td>
+            </tr>
+            ${order.discount > 0 ? `
+              <tr>
+                <td style="padding: 5px 0; color: #2e7d32; text-align: right;">Discount:</td>
+                <td style="padding: 5px 0 5px 20px; text-align: right; color: #2e7d32;">-${formatCurrency(order.discount)}</td>
+              </tr>
+            ` : ''}
+            <tr>
+              <td style="padding: 5px 0; color: #666; text-align: right;">Shipping:</td>
+              <td style="padding: 5px 0 5px 20px; text-align: right;">${order.shippingCost === 0 ? 'Free' : formatCurrency(order.shippingCost)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 15px 0 5px; color: #333; font-weight: bold; text-align: right; border-top: 1px solid #eee;">Grand Total:</td>
+              <td style="padding: 15px 0 5px 20px; text-align: right; font-weight: bold; font-size: 16px; border-top: 1px solid #eee;">${formatCurrency(order.totalAmount)}</td>
+            </tr>
+          </table>
+
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 4px;">
+            <h3 style="margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Shipping Address</h3>
+            <p style="margin: 0; color: #555; font-size: 14px; line-height: 1.6;">
+              <strong>${order.shippingAddress.name}</strong><br>
+              ${order.shippingAddress.address}<br>
+              ${order.shippingAddress.city}, ${order.shippingAddress.state} - ${order.shippingAddress.pincode}<br>
+              Phone: ${order.shippingAddress.phone}
+            </p>
           </div>
-          
-          <div style="margin-top: 30px; padding: 20px; background-color: #e9ecef; text-align: center;">
-            <p style="margin: 0; color: #666;">We'll send you shipping updates as your order progresses.</p>
-            <p style="margin: 5px 0 0 0; color: #666;">If you have any questions, contact us at support@sareeweb.com</p>
-          </div>
+
+          <p style="margin-top: 30px; text-align: center; color: #999; font-size: 12px;">
+            Thank you for choosing SareeWeb.
+          </p>
         </div>
       </div>
     `
@@ -189,63 +226,80 @@ const emailTemplates = {
   orderShipped: (order) => ({
     subject: `Order Shipped - ${order.orderNumber}`,
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background-color: #f8f9fa; padding: 20px; text-align: center;">
-          <h1 style="color: #333; margin: 0;">SareeWeb</h1>
-          <p style="color: #666; margin: 5px 0 0 0;">Traditional Indian Sarees</p>
+      <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; background-color: #ffffff;">
+        <div style="background-color: #f8f9fa; padding: 30px; text-align: center; border-bottom: 1px solid #eee;">
+          <h1 style="color: #333; margin: 0; font-family: serif;">SareeWeb</h1>
         </div>
         
-        <div style="padding: 20px;">
-          <h2 style="color: #333;">Your Order Has Been Shipped!</h2>
-          <p>Dear ${order.shippingAddress.name},</p>
-          <p>Great news! Your order ${order.orderNumber} has been shipped and is on its way to you.</p>
+        <div style="padding: 30px;">
+          <h2 style="color: #333; font-size: 20px; margin-top: 0;">Your Order is on the way!</h2>
+          <p style="color: #555; line-height: 1.6;">
+            Dear ${order.shippingAddress.name},<br><br>
+            We are pleased to inform you that your order <strong>${order.orderNumber}</strong> has been dispatched from our warehouse.
+          </p>
           
-          <div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; margin: 20px 0;">
-            <h3 style="margin: 0 0 10px 0; color: #155724;">Order Status: Shipped</h3>
-            <p style="margin: 5px 0;"><strong>Order Number:</strong> ${order.orderNumber}</p>
-            <p style="margin: 5px 0;"><strong>Shipped Date:</strong> ${new Date().toLocaleDateString()}</p>
-            ${order.estimatedDelivery ? `<p style="margin: 5px 0;"><strong>Expected Delivery:</strong> ${new Date(order.estimatedDelivery).toLocaleDateString()}</p>` : ''}
+          <div style="border: 1px solid #b3e5fc; background-color: #e1f5fe; padding: 15px; border-radius: 4px; margin: 25px 0;">
+            <table style="width: 100%;">
+              <tr>
+                <td style="font-size: 14px; color: #0277bd;"><strong>Status:</strong> Shipped</td>
+              </tr>
+              <tr>
+                <td style="font-size: 14px; color: #0277bd; padding-top: 5px;"><strong>Date:</strong> ${new Date().toLocaleDateString()}</td>
+              </tr>
+            </table>
           </div>
           
-          <p>Your order is being delivered by our shipping partner. You can expect to receive it within 3-5 business days.</p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.FRONTEND_URL}/orders/${order._id}" style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Track Your Order</a>
-          </div>
-          
-          <p>Thank you for choosing SareeWeb for your traditional saree needs!</p>
+          <h3 style="font-size: 16px; margin-bottom: 10px;">Shipment Details</h3>
+          <p style="font-size: 14px; color: #666; line-height: 1.6; margin-top: 0;">
+            The package is being handled by our courier partner. You should receive your delivery within the estimated timeline provided at checkout.
+          </p>
+
+          <h3 style="font-size: 16px; margin-bottom: 10px; margin-top: 25px;">Shipping To:</h3>
+          <p style="font-size: 14px; color: #666; line-height: 1.6; margin-top: 0; background-color: #f9f9f9; padding: 15px; border-radius: 4px;">
+            ${order.shippingAddress.name}<br>
+            ${order.shippingAddress.address}, ${order.shippingAddress.city}<br>
+            ${order.shippingAddress.state}, ${order.shippingAddress.pincode}
+          </p>
         </div>
       </div>
     `
   }),
 
   orderDelivered: (order) => ({
-    subject: `Order Delivered - ${order.orderNumber}`,
+    subject: `Delivered - ${order.orderNumber}`,
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background-color: #f8f9fa; padding: 20px; text-align: center;">
-          <h1 style="color: #333; margin: 0;">SareeWeb</h1>
-          <p style="color: #666; margin: 5px 0 0 0;">Traditional Indian Sarees</p>
+      <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; background-color: #ffffff;">
+        <div style="background-color: #f8f9fa; padding: 30px; text-align: center; border-bottom: 1px solid #eee;">
+          <h1 style="color: #333; margin: 0; font-family: serif;">SareeWeb</h1>
         </div>
         
-        <div style="padding: 20px;">
-          <h2 style="color: #333;">Your Order Has Been Delivered!</h2>
-          <p>Dear ${order.shippingAddress.name},</p>
-          <p>We're delighted to confirm that your order ${order.orderNumber} has been successfully delivered.</p>
+        <div style="padding: 30px;">
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h2 style="color: #2e7d32; margin: 0 0 10px 0;">Delivered Successfully</h2>
+            <p style="color: #666; font-size: 14px; margin: 0;">Your package has arrived.</p>
+          </div>
+
+          <p style="color: #333; line-height: 1.6;">
+            Hello ${order.shippingAddress.name},<br><br>
+            We are writing to confirm that order <strong>${order.orderNumber}</strong> has been delivered to your shipping address.
+          </p>
           
-          <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; margin: 20px 0;">
-            <h3 style="margin: 0 0 10px 0; color: #0c5460;">Order Status: Delivered</h3>
-            <p style="margin: 5px 0;"><strong>Order Number:</strong> ${order.orderNumber}</p>
-            <p style="margin: 5px 0;"><strong>Delivered Date:</strong> ${new Date().toLocaleDateString()}</p>
+          <div style="background-color: #f1f8e9; border-left: 4px solid #558b2f; padding: 15px; margin: 25px 0;">
+            <p style="margin: 0; font-size: 14px; color: #33691e;">
+              <strong>Delivery Date:</strong> ${new Date().toLocaleDateString()}<br>
+              <strong>Location:</strong> ${order.shippingAddress.city}, ${order.shippingAddress.state}
+            </p>
           </div>
           
-          <p>We hope you're enjoying your beautiful saree! We'd love to hear your feedback.</p>
+          <p style="color: #333; line-height: 1.6;">
+            We hope you love your purchase! Thank you for supporting our traditional saree collection.
+          </p>
+
+          <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
           
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.FRONTEND_URL}/orders/${order._id}/review" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Write a Review</a>
-          </div>
-          
-          <p>Thank you for choosing SareeWeb. We look forward to serving you again!</p>
+          <p style="text-align: center; font-size: 12px; color: #999;">
+            If you have any issues with this delivery, please reply to this email.
+          </p>
         </div>
       </div>
     `
@@ -276,58 +330,34 @@ const sendEmail = async (to, template, data) => {
   }
 };
 
-// Send order confirmation email
+// Exported functions (Logic remains unchanged)
 const sendOrderConfirmation = async (order) => {
   const customerEmail = order.user?.email || order.customerEmail;
-  if (!customerEmail) {
-    console.error('Customer email not found for order:', order.orderNumber);
-    return { success: false, error: 'Customer email not found' };
-  }
-
+  if (!customerEmail) return { success: false, error: 'Customer email not found' };
   return await sendEmail(customerEmail, 'orderConfirmation', order);
 };
 
-// Send order shipped email
 const sendOrderShipped = async (order) => {
   const customerEmail = order.user?.email || order.customerEmail;
-  if (!customerEmail) {
-    console.error('Customer email not found for order:', order.orderNumber);
-    return { success: false, error: 'Customer email not found' };
-  }
-
+  if (!customerEmail) return { success: false, error: 'Customer email not found' };
   return await sendEmail(customerEmail, 'orderShipped', order);
 };
 
-// Send order delivered email
 const sendOrderDelivered = async (order) => {
   const customerEmail = order.user?.email || order.customerEmail;
-  if (!customerEmail) {
-    console.error('Customer email not found for order:', order.orderNumber);
-    return { success: false, error: 'Customer email not found' };
-  }
-
+  if (!customerEmail) return { success: false, error: 'Customer email not found' };
   return await sendEmail(customerEmail, 'orderDelivered', order);
 };
 
-// Send payment confirmation email
 const sendPaymentConfirmed = async (order) => {
   const customerEmail = order.user?.email || order.customerEmail;
-  if (!customerEmail) {
-    console.error('Customer email not found for order:', order.orderNumber);
-    return { success: false, error: 'Customer email not found' };
-  }
-
+  if (!customerEmail) return { success: false, error: 'Customer email not found' };
   return await sendEmail(customerEmail, 'paymentConfirmed', order);
 };
 
-// Send admin notification
 const sendAdminNotification = async (order) => {
   const adminEmail = process.env.ADMIN_EMAIL;
-  if (!adminEmail) {
-    console.error('Admin email not configured');
-    return { success: false, error: 'Admin email not configured' };
-  }
-
+  if (!adminEmail) return { success: false, error: 'Admin email not configured' };
   return await sendEmail(adminEmail, 'adminNotification', order);
 };
 

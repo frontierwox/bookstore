@@ -3,22 +3,26 @@ const Product = require('../models/Product');
 const { validationResult } = require('express-validator');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 
+// Helper to populate cart
+const populateCart = async (cart) => {
+  return await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
+};
+
 // @desc    Get user's cart
 // @route   GET /api/cart
 // @access  Private
 exports.getCart = asyncHandler(async (req, res) => {
-  let cart = await Cart.findOne({ user: req.user._id })
-    .populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
+  let cart = await Cart.findOne({ user: req.user._id });
 
   if (!cart) {
-    cart = await Cart.create({
-      user: req.user._id,
-      items: []
-    });
+    cart = await Cart.create({ user: req.user._id, items: [] });
   }
 
+  // Check for price updates
+  await populateCart(cart);
   let shouldSave = false;
-  for (const item of cart.items) {
+
+  cart.items.forEach(item => {
     const product = item.product;
     if (product && typeof product.getCurrentPrice === 'function') {
       const currentPrice = product.getCurrentPrice();
@@ -27,17 +31,13 @@ exports.getCart = asyncHandler(async (req, res) => {
         shouldSave = true;
       }
     }
-  }
+  });
 
   if (shouldSave) {
     await cart.save();
-    await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
   }
 
-  res.json({
-    success: true,
-    cart
-  });
+  res.json({ success: true, cart });
 });
 
 // @desc    Add item to cart
@@ -51,28 +51,15 @@ exports.addToCart = asyncHandler(async (req, res) => {
 
   const { product, quantity, selectedSize, selectedColor } = req.body;
 
-  // Check if product exists
   const productDoc = await Product.findById(product);
-  if (!productDoc) {
-    throw new AppError(404, 'Product not found');
-  }
+  if (!productDoc) throw new AppError(404, 'Product not found');
+  if (productDoc.stock < quantity) throw new AppError(400, 'Insufficient stock');
 
-  // Check stock
-  if (productDoc.stock < quantity) {
-    throw new AppError(400, 'Insufficient stock');
-  }
-
-  // Get user's cart
   let cart = await Cart.findOne({ user: req.user._id });
-
   if (!cart) {
-    cart = await Cart.create({
-      user: req.user._id,
-      items: []
-    });
+    cart = await Cart.create({ user: req.user._id, items: [] });
   }
 
-  // Check if product already in cart
   const existingItemIndex = cart.items.findIndex(
     item => item.product.toString() === product &&
             item.selectedSize === selectedSize &&
@@ -85,7 +72,7 @@ exports.addToCart = asyncHandler(async (req, res) => {
 
   if (existingItemIndex > -1) {
     cart.items[existingItemIndex].quantity += quantity;
-    cart.items[existingItemIndex].price = unitPrice;
+    cart.items[existingItemIndex].price = unitPrice; // Update price on add
   } else {
     cart.items.push({
       product,
@@ -97,124 +84,88 @@ exports.addToCart = asyncHandler(async (req, res) => {
   }
 
   await cart.save();
-  await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
+  await populateCart(cart);
 
-  res.json({
-    success: true,
-    message: 'Item added to cart',
-    cart
-  });
+  res.json({ success: true, message: 'Item added to cart', cart });
 });
 
 // @desc    Update cart item quantity
-// @route   PUT /api/cart/:productId or PUT /api/cart/item/:itemId
+// @route   PUT /api/cart/:itemId
 // @access  Private
 exports.updateCartItem = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
-
+  // 1. Manual validation check (safety net)
   const { quantity } = req.body;
-
-  const cart = await Cart.findOne({ user: req.user._id });
-
-  if (!cart) {
-    throw new AppError(404, 'Cart not found');
+  if (!quantity || quantity < 1) {
+    throw new AppError(400, 'Quantity must be at least 1');
   }
 
+  const cart = await Cart.findOne({ user: req.user._id });
+  if (!cart) throw new AppError(404, 'Cart not found');
+
+  // 2. Robust ID Lookup (Handles both ItemID and ProductID)
   const identifier = req.params.productId || req.params.itemId;
-  const item = cart.items.id(identifier) || cart.items.find(i => i.product.toString() === identifier);
+  
+  // Find index of the item
+  const itemIndex = cart.items.findIndex(i => 
+    i._id.toString() === identifier || i.product.toString() === identifier
+  );
 
-  if (!item) {
+  if (itemIndex === -1) {
     throw new AppError(404, 'Item not found in cart');
   }
 
-  // Check stock
+  const item = cart.items[itemIndex];
+
+  // 3. Check Stock
+  // We need to fetch the product to check stock, as it might not be populated yet if we just fetched the cart
   const product = await Product.findById(item.product);
+  
+  if (!product) {
+    // Edge case: Product was deleted from DB but is still in cart
+    cart.items.pull(item._id);
+    await cart.save();
+    throw new AppError(404, 'Product no longer exists');
+  }
+
   if (product.stock < quantity) {
-    throw new AppError(400, 'Insufficient stock');
+    throw new AppError(400, `Only ${product.stock} items available`);
   }
 
-  item.quantity = quantity;
-  item.price = typeof product.getCurrentPrice === 'function' ? product.getCurrentPrice() : product.price;
+  // 4. Update
+  cart.items[itemIndex].quantity = quantity;
+  cart.items[itemIndex].price = typeof product.getCurrentPrice === 'function' ? product.getCurrentPrice() : product.price;
 
   await cart.save();
-  await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
+  await populateCart(cart);
 
-  res.json({
-    success: true,
-    message: 'Cart item updated',
-    cart
-  });
-});
-
-// @desc    Update cart item details (size, color)
-// @route   PUT /api/cart/item/:itemId/details
-// @access  Private
-exports.updateCartItemDetails = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
-
-  const { selectedSize, selectedColor } = req.body;
-
-  const cart = await Cart.findOne({ user: req.user._id });
-
-  if (!cart) {
-    throw new AppError(404, 'Cart not found');
-  }
-
-  const item = cart.items.id(req.params.itemId);
-  if (!item) {
-    throw new AppError(404, 'Item not found in cart');
-  }
-
-  if (selectedSize) item.selectedSize = selectedSize;
-  if (selectedColor) item.selectedColor = selectedColor;
-
-  await cart.save();
-  await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
-
-  res.json({
-    success: true,
-    message: 'Cart item details updated',
-    cart
-  });
+  res.json({ success: true, message: 'Cart updated', cart });
 });
 
 // @desc    Remove item from cart
-// @route   DELETE /api/cart/:productId or DELETE /api/cart/item/:itemId
+// @route   DELETE /api/cart/:itemId
 // @access  Private
 exports.removeFromCart = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
-
   const cart = await Cart.findOne({ user: req.user._id });
-
-  if (!cart) {
-    throw new AppError(404, 'Cart not found');
-  }
+  if (!cart) throw new AppError(404, 'Cart not found');
 
   const identifier = req.params.productId || req.params.itemId;
-  const item = cart.items.id(identifier) || cart.items.find(i => i.product.toString() === identifier);
+
+  // Find the item to ensure it exists
+  const item = cart.items.find(i => 
+    i._id.toString() === identifier || i.product.toString() === identifier
+  );
 
   if (!item) {
     throw new AppError(404, 'Item not found in cart');
   }
 
-  item.remove();
-  await cart.save();
-  await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
+  // FIX: Use pull() on the array instead of item.remove()
+  cart.items.pull(item._id);
 
-  res.json({
-    success: true,
-    message: 'Item removed from cart',
-    cart
-  });
+  await cart.save();
+  await populateCart(cart);
+
+  res.json({ success: true, message: 'Item removed', cart });
 });
 
 // @desc    Clear cart
@@ -222,41 +173,28 @@ exports.removeFromCart = asyncHandler(async (req, res) => {
 // @access  Private
 exports.clearCart = asyncHandler(async (req, res) => {
   const cart = await Cart.findOne({ user: req.user._id });
-
-  if (!cart) {
-    throw new AppError(404, 'Cart not found');
-  }
+  if (!cart) throw new AppError(404, 'Cart not found');
 
   cart.items = [];
   await cart.save();
 
-  res.json({
-    success: true,
-    message: 'Cart cleared',
-    cart
-  });
+  res.json({ success: true, message: 'Cart cleared', cart });
 });
 
-// @desc    Merge cart (for guest users)
+// @desc    Merge cart
 // @route   POST /api/cart/merge
 // @access  Private
 exports.mergeCart = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
-
   const { guestCartItems } = req.body;
+  if (!guestCartItems || !Array.isArray(guestCartItems)) {
+    throw new AppError(400, 'Invalid guest cart items');
+  }
 
   let cart = await Cart.findOne({ user: req.user._id });
 
   if (!cart) {
-    cart = await Cart.create({
-      user: req.user._id,
-      items: guestCartItems
-    });
+    cart = await Cart.create({ user: req.user._id, items: guestCartItems });
   } else {
-    // Merge guest cart items
     for (const guestItem of guestCartItems) {
       const existingItemIndex = cart.items.findIndex(
         item => item.product.toString() === guestItem.product &&
@@ -273,10 +211,12 @@ exports.mergeCart = asyncHandler(async (req, res) => {
   }
 
   await cart.save();
-  await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
-
+  // Perform price update check
+  await populateCart(cart);
+  
+  // Logic to refresh prices after merge
   let shouldSave = false;
-  for (const item of cart.items) {
+  cart.items.forEach(item => {
     const product = item.product;
     if (product && typeof product.getCurrentPrice === 'function') {
       const currentPrice = product.getCurrentPrice();
@@ -285,16 +225,9 @@ exports.mergeCart = asyncHandler(async (req, res) => {
         shouldSave = true;
       }
     }
-  }
-
-  if (shouldSave) {
-    await cart.save();
-    await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
-  }
-
-  res.json({
-    success: true,
-    message: 'Cart merged successfully',
-    cart
   });
+
+  if (shouldSave) await cart.save();
+
+  res.json({ success: true, message: 'Cart merged', cart });
 });

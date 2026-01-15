@@ -34,7 +34,7 @@ const productSchema = new mongoose.Schema({
   category: {
     type: String,
     required: [true, 'Category is required'],
-    enum: ['silk', 'cotton', 'chiffon', 'georgette', 'crepe', 'banarasi', 'kanchipuram', 'other']
+    trim: true
   },
   brand: {
     type: String,
@@ -44,10 +44,10 @@ const productSchema = new mongoose.Schema({
     type: String,
     trim: true
   }],
-  sizes: [{
-    type: String,
-    enum: ['S', 'M', 'L', 'XL', 'XXL', 'Free Size']
-  }],
+ sizes: [{
+  type: String,
+  trim: true
+}],
   images: [{
     url: String,
     alt: String

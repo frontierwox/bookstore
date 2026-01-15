@@ -37,11 +37,18 @@ exports.getAllProducts = asyncHandler(async (req, res) => {
   }
 
   // Filter by price range
-  if (req.query.minPrice || req.query.maxPrice) {
-    query.price = {};
-    if (req.query.minPrice) query.price.$gte = parseFloat(req.query.minPrice);
-    if (req.query.maxPrice) query.price.$lte = parseFloat(req.query.maxPrice);
-  }
+// Filter by price range (USE EFFECTIVE PRICE)
+if (req.query.minPrice || req.query.maxPrice) {
+  const min = req.query.minPrice ? parseFloat(req.query.minPrice) : 0;
+  const max = req.query.maxPrice ? parseFloat(req.query.maxPrice) : Infinity;
+
+  query.$expr = {
+    $and: [
+      { $gte: [{ $ifNull: ['$discountedPrice', '$price'] }, min] },
+      { $lte: [{ $ifNull: ['$discountedPrice', '$price'] }, max] }
+    ]
+  };
+}
 
   // Filter by availability
   if (req.query.inStock === 'true') {
