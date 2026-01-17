@@ -102,7 +102,7 @@ const Navbar = ({}) => {
 
               <Link to="/" className="flex items-center gap-2 group">
                 <h1 className="font-Alice text-xl font-bold tracking-tight text-slate-900 group-hover:text-rose-600 transition-colors">
-                  Sri Sai Saree Collections
+                  Shri Sai Collections
                 </h1>
               </Link>
             </div>
