@@ -22,7 +22,9 @@ const ProductCard = ({ product }) => {
   return (
     <Link 
       to={`/products/${product._id}`}
-      className="group block bg-white rounded-xl border border-slate-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden hover:shadow-lg hover:-translate-y-1 transition-all duration-300 h-full"
+      // Added active:scale-[0.98] for tactile mobile feel
+      // Added h-full to ensure cards in a row are always equal height
+      className="group block h-full bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden hover:shadow-xl hover:-translate-y-1 active:scale-[0.98] transition-all duration-300"
     >
       {/* --- Image Section --- */}
       <div className="relative aspect-[3/4] overflow-hidden bg-slate-100">
@@ -34,7 +36,7 @@ const ProductCard = ({ product }) => {
             alt={product.images[0].alt || product.name}
             loading="lazy"
             className={`
-              w-full h-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-105
+              w-full h-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-110
               ${isSoldOut ? 'opacity-60 grayscale' : ''}
             `}
           />
@@ -45,7 +47,7 @@ const ProductCard = ({ product }) => {
         )}
 
         {/* --- Badges (Absolute Positioning) --- */}
-        <div className="absolute top-3 left-3 flex flex-col gap-2 z-10 items-start">
+        <div className="absolute top-2 left-2 md:top-3 md:left-3 flex flex-col gap-2 z-10 items-start">
           
           {/* Sold Out Badge */}
           {isSoldOut ? (
@@ -72,7 +74,7 @@ const ProductCard = ({ product }) => {
 
         {/* Rating Badge (Bottom Left overlay) */}
         {product.ratings && product.ratings.count > 0 && (
-          <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-md px-2 py-1 rounded-full flex items-center gap-1 shadow-sm border border-slate-100/50">
+          <div className="absolute bottom-2 left-2 md:bottom-3 md:left-3 bg-white/95 backdrop-blur-md px-2 py-1 rounded-full flex items-center gap-1 shadow-sm border border-slate-100">
             <Star size={10} className="text-amber-400 fill-amber-400" />
             <span className="text-[10px] font-bold text-slate-700 leading-none pt-0.5">
               {product.ratings.average.toFixed(1)}
@@ -82,25 +84,26 @@ const ProductCard = ({ product }) => {
       </div>
 
       {/* --- Details Section --- */}
-      <div className="p-4 flex flex-col h-auto">
+      {/* Reduced padding on mobile (p-3) for space efficiency, larger (p-4) on desktop */}
+      <div className="p-3 md:p-4 flex flex-col h-auto flex-grow bg-white">
         
         {/* Category */}
-        <div className="mb-1.5">
+        <div className="mb-1">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-rose-600 transition-colors">
             {product.category}
           </span>
         </div>
 
-        {/* Title */}
-        <h3 className="font-serif text-[17px] text-slate-900 leading-[1.4] mb-2 line-clamp-2 group-hover:text-rose-700 transition-colors min-h-[2.8em]">
+        {/* Title: Scaled text-base for mobile, text-lg for desktop */}
+        <h3 className="font-serif text-base md:text-lg text-slate-900 leading-tight mb-2 line-clamp-2 group-hover:text-rose-700 transition-colors">
           {product.name}
         </h3>
 
-        {/* Price Row */}
-        <div className="mt-auto flex items-baseline gap-2.5 pt-2">
+        {/* Price Row - Pushed to bottom with mt-auto */}
+        <div className="mt-auto flex items-baseline gap-2 pt-2 border-t border-slate-50">
           {product.discountedPrice ? (
             <>
-              <span className="text-lg font-bold text-slate-900">
+              <span className="text-base md:text-lg font-bold text-slate-900">
                 {formatPrice(product.discountedPrice)}
               </span>
               <span className="text-xs text-slate-400 line-through decoration-slate-300">
@@ -108,7 +111,7 @@ const ProductCard = ({ product }) => {
               </span>
             </>
           ) : (
-            <span className="text-lg font-bold text-slate-900">
+            <span className="text-base md:text-lg font-bold text-slate-900">
               {formatPrice(product.price)}
             </span>
           )}

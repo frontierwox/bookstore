@@ -5,16 +5,23 @@ import { Trash2, Plus, Minus, ShoppingBag, ArrowRight, ShieldCheck, Lock, AlertC
 import { cartApi } from '../services/cart'
 import { AuthContext } from '../context/AuthContext'
 import CartSummary from '../components/CartSummary' 
-import toast from 'react-hot-toast' // Recommended for better UX
+import toast from 'react-hot-toast'
 
 const Cart = () => {
   const navigate = useNavigate()
   const { user } = useContext(AuthContext)
+  
   const [cart, setCart] = useState(null)
   const [loading, setLoading] = useState(true)
+  
+  // Interaction States
   const [updatingId, setUpdatingId] = useState(null) 
   const [removingId, setRemovingId] = useState(null)
 
+  // Coupon state - lifted to Cart level
+  const [appliedCoupon, setAppliedCoupon] = useState(null) // { code, discountAmount }
+
+  // --- Initial Fetch ---
   useEffect(() => {
     if (user) {
       fetchCart()
@@ -27,6 +34,13 @@ const Cart = () => {
     try {
       const data = await cartApi.getCart()
       setCart(data.cart)
+      // If cart has a saved coupon, restore it
+      if (data.cart?.appliedCoupon) {
+        setAppliedCoupon({
+          code: data.cart.appliedCoupon.code,
+          discountAmount: data.cart.appliedCoupon.discountAmount
+        })
+      }
     } catch (error) {
       console.error('Error fetching cart:', error)
       toast.error("Could not load cart")
@@ -35,26 +49,37 @@ const Cart = () => {
     }
   }
 
+  // --- Actions ---
+
   const handleQuantityChange = async (item, newQuantity) => {
     if (newQuantity < 1) return
-    
-    // Optimistic UI check: prevent spamming
     if (updatingId) return;
 
     setUpdatingId(item._id)
     
     try {
-      // Pass item._id (Cart Item ID) which matches our backend route expectation
+      const oldCart = { ...cart }
+      setCart(prev => ({
+        ...prev,
+        items: prev.items.map(i => i._id === item._id ? { ...i, quantity: newQuantity } : i)
+      }))
+
       const data = await cartApi.updateCartItem(item._id, { quantity: newQuantity })
       
       if (data.success) {
         setCart(data.cart)
+        
+        // Re-validate coupon if one is applied
+        if (appliedCoupon) {
+          await revalidateCoupon(data.cart)
+        }
+      } else {
+        setCart(oldCart)
       }
     } catch (error) {
       console.error('Error updating quantity:', error)
-      // Extract error message from backend if available
-      const msg = error.response?.data?.message || "Could not update quantity";
-      toast.error(msg)
+      toast.error(error.response?.data?.message || "Could not update quantity")
+      fetchCart()
     } finally {
       setUpdatingId(null)
     }
@@ -69,6 +94,14 @@ const Cart = () => {
       if (data.success) {
         setCart(data.cart)
         toast.success("Item removed")
+        
+        // Re-validate coupon if cart still has items
+        if (appliedCoupon && data.cart.items.length > 0) {
+          await revalidateCoupon(data.cart)
+        } else if (data.cart.items.length === 0) {
+          // Clear coupon if cart is empty
+          setAppliedCoupon(null)
+        }
       }
     } catch (error) {
       console.error('Error removing item:', error)
@@ -82,12 +115,79 @@ const Cart = () => {
     if (window.confirm('Are you sure you want to remove all items?')) {
       try {
         await cartApi.clearCart()
-        setCart({ ...cart, items: [] })
+        setCart({ ...cart, items: [], totalAmount: 0, totalItems: 0 })
+        setAppliedCoupon(null) // Clear coupon when cart is cleared
         toast.success("Cart cleared")
       } catch (error) {
         console.error('Error clearing cart:', error)
+        toast.error("Failed to clear cart")
       }
     }
+  }
+
+  // Coupon validation handler - called by CartSummary
+  const handleCouponCheck = async (code) => {
+    try {
+      const res = await cartApi.validateCoupon({
+        code, 
+        cartTotal: cart.totalAmount,
+        cartItems: cart.items 
+      })
+      
+      // Success - update state
+      const couponData = {
+        code: res.couponCode || code,
+        discountAmount: res.discountAmount || res.discount || 0
+      }
+      
+      setAppliedCoupon(couponData)
+      
+      return couponData
+    } catch (error) {
+      // Clear coupon on error
+      setAppliedCoupon(null)
+      throw error // Let CartSummary handle the toast
+    }
+  }
+
+  // Re-validate coupon when cart changes
+  const revalidateCoupon = async (updatedCart) => {
+    if (!appliedCoupon) return
+    
+    try {
+      const res = await cartApi.validateCoupon({
+        code: appliedCoupon.code,
+        cartTotal: updatedCart.totalAmount,
+        cartItems: updatedCart.items
+      })
+      
+      // Update discount if it changed
+      if (res.discountAmount !== appliedCoupon.discountAmount) {
+        setAppliedCoupon({
+          code: res.couponCode || appliedCoupon.code,
+          discountAmount: res.discountAmount || res.discount || 0
+        })
+        toast.success('Coupon discount updated based on cart changes')
+      }
+    } catch (error) {
+      // Coupon no longer valid
+      setAppliedCoupon(null)
+      toast.error('Coupon is no longer valid for current cart')
+    }
+  }
+
+  // Handle coupon removal
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null)
+  }
+
+  // Navigate to checkout with coupon data
+  const handleCheckout = () => {
+    navigate('/checkout', { 
+      state: { 
+        appliedCoupon: appliedCoupon 
+      } 
+    })
   }
 
   const formatPrice = (price) => {
@@ -98,7 +198,7 @@ const Cart = () => {
     }).format(price)
   }
 
-  // --- Loading State ---
+  // --- Render: Loading ---
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50">
@@ -108,7 +208,7 @@ const Cart = () => {
     )
   }
 
-  // --- Not Logged In State ---
+  // --- Render: Guest ---
   if (!user) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50 p-4 text-center">
@@ -126,7 +226,7 @@ const Cart = () => {
     )
   }
 
-  // --- Empty Cart State ---
+  // --- Render: Empty ---
   if (!cart || !cart.items || cart.items.length === 0) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50 p-4">
@@ -148,7 +248,7 @@ const Cart = () => {
     )
   }
 
-  // --- Main Cart UI ---
+  // --- Render: Main Cart ---
   return (
     <div className="min-h-screen bg-stone-50 py-12 px-4 md:px-8">
       <div className="max-w-7xl mx-auto">
@@ -203,23 +303,23 @@ const Cart = () => {
                             className="w-full h-full object-cover"
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-slate-300">No Image</div>
+                          <div className="w-full h-full flex items-center justify-center text-slate-300 text-xs">No Image</div>
                         )}
-                        {/* Overlay when removing */}
                         {removingId === item._id && (
-                           <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
+                           <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-10">
                               <Loader2 className="animate-spin text-red-500" />
                            </div>
                         )}
                       </div>
-                      <div className="flex flex-col justify-between py-1">
+                      
+                      <div className="flex flex-col justify-between py-1 flex-1">
                         <div>
                           <Link to={`/products/${item.product?._id}`} className="font-serif text-lg text-slate-900 hover:text-rose-600 transition-colors line-clamp-1">
-                            {item.product?.name}
+                            {item.product?.name || "Unknown Product"}
                           </Link>
                           <div className="text-sm text-slate-500 mt-1 space-y-0.5">
-                            {item.selectedSize && <p>Size: <span className="text-slate-700">{item.selectedSize}</span></p>}
-                            {item.selectedColor && <p>Color: <span className="text-slate-700">{item.selectedColor}</span></p>}
+                            {item.selectedSize && <p>Size: <span className="text-slate-700 font-medium">{item.selectedSize}</span></p>}
+                            {item.selectedColor && <p>Color: <span className="text-slate-700 font-medium">{item.selectedColor}</span></p>}
                           </div>
                         </div>
                         <div className="md:hidden font-medium text-slate-900 mt-2">
@@ -261,25 +361,22 @@ const Cart = () => {
                     {/* Price & Actions */}
                     <div className="w-full md:col-span-3 flex md:flex-col justify-between md:justify-center items-end mt-4 md:mt-0">
                       <div className="text-right">
-                         {/* Desktop Price */}
-                        <div className="hidden md:block font-medium text-lg text-slate-900">
-                          {formatPrice(item.price * item.quantity)}
-                        </div>
-                        {/* Mobile Total Label */}
-                        <div className="md:hidden font-medium text-lg text-slate-900">
-                          <span className="text-sm text-slate-500 font-normal mr-2">Total:</span>
-                          {formatPrice(item.price * item.quantity)}
-                        </div>
+                         <div className="hidden md:block font-medium text-lg text-slate-900">
+                           {formatPrice(item.price * item.quantity)}
+                         </div>
+                         <div className="md:hidden font-medium text-lg text-slate-900">
+                           <span className="text-sm text-slate-500 font-normal mr-2">Total:</span>
+                           {formatPrice(item.price * item.quantity)}
+                         </div>
                       </div>
                       
                       <button 
                         onClick={() => handleRemoveItem(item._id)}
                         disabled={removingId === item._id}
-                        className="flex items-center text-sm text-red-500 hover:text-red-700 mt-2 px-2 py-1 rounded hover:bg-red-50 transition-colors disabled:opacity-50"
+                        className="flex items-center text-xs font-medium text-red-500 hover:text-red-700 mt-2 px-2 py-1.5 rounded hover:bg-red-50 transition-colors disabled:opacity-50"
                       >
-                        <Trash2 size={16} className="mr-1.5" />
-                        <span className="hidden md:inline">{removingId === item._id ? 'Removing...' : 'Remove'}</span>
-                        <span className="md:hidden">{removingId === item._id ? '...' : 'Remove'}</span>
+                        <Trash2 size={14} className="mr-1.5" />
+                        {removingId === item._id ? 'Removing...' : 'Remove'}
                       </button>
                     </div>
 
@@ -290,8 +387,8 @@ const Cart = () => {
 
             <div className="pt-4 flex justify-end">
                <button 
-                  onClick={handleClearCart} 
-                  className="text-sm text-slate-400 hover:text-red-500 transition-colors underline decoration-slate-300 underline-offset-4"
+                 onClick={handleClearCart} 
+                 className="text-sm text-slate-400 hover:text-red-500 transition-colors underline decoration-slate-300 underline-offset-4"
                >
                  Clear Shopping Bag
                </button>
@@ -301,21 +398,28 @@ const Cart = () => {
           {/* Right Column: Summary (Sticky) */}
           <div className="w-full lg:w-1/3">
             <div className="sticky top-24">
-              <CartSummary cart={cart} onCheckout={() => navigate('/checkout')} formatPrice={formatPrice} />
+              <CartSummary 
+                cart={cart} 
+                onCheckout={handleCheckout}
+                formatPrice={formatPrice}
+                onApplyCoupon={handleCouponCheck}
+                appliedCoupon={appliedCoupon}
+                onRemoveCoupon={handleRemoveCoupon}
+              />
               
               {/* Trust Badges */}
               <div className="mt-6 grid grid-cols-3 gap-2 text-center">
-                <div className="flex flex-col items-center gap-2 p-3 bg-white rounded-xl shadow-sm">
+                <div className="flex flex-col items-center gap-2 p-3 bg-white rounded-xl shadow-sm border border-slate-50">
                   <ShieldCheck size={20} className="text-emerald-500" />
-                  <span className="text-[10px] text-slate-500 font-medium">Authentic</span>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">Authentic</span>
                 </div>
-                <div className="flex flex-col items-center gap-2 p-3 bg-white rounded-xl shadow-sm">
+                <div className="flex flex-col items-center gap-2 p-3 bg-white rounded-xl shadow-sm border border-slate-50">
                   <Lock size={20} className="text-blue-500" />
-                  <span className="text-[10px] text-slate-500 font-medium">Secure</span>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">Secure</span>
                 </div>
-                <div className="flex flex-col items-center gap-2 p-3 bg-white rounded-xl shadow-sm">
+                <div className="flex flex-col items-center gap-2 p-3 bg-white rounded-xl shadow-sm border border-slate-50">
                   <AlertCircle size={20} className="text-amber-500" />
-                  <span className="text-[10px] text-slate-500 font-medium">Support</span>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wide">Support</span>
                 </div>
               </div>
             </div>

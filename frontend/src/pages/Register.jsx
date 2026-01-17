@@ -66,8 +66,8 @@ const Register = () => {
     <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 md:py-8 relative overflow-x-hidden">
       
       {/* Background Ambience */}
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-rose-200/30 rounded-full blur-3xl fixed" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-slate-200/30 rounded-full blur-3xl fixed" />
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-rose-200/30 rounded-full blur-3xl" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-slate-200/30 rounded-full blur-3xl" />
 
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}

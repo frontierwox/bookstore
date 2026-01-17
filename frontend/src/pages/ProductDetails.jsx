@@ -1,10 +1,12 @@
-import { useState, useEffect, useContext } from 'react'
+import React, { useState, useEffect, useContext, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { 
   MdShoppingCart, MdFavorite, MdFavoriteBorder, 
   MdLocalShipping, MdVerifiedUser, MdCached, 
-  MdZoomIn, MdClose, MdCheckCircle, MdArrowForward 
+  MdZoomIn, MdClose, MdCheckCircle, MdArrowForward, 
+  MdStar, MdChevronRight 
 } from 'react-icons/md'
+import { motion, AnimatePresence } from 'framer-motion'
 import { productsApi } from '../services/products'
 import { cartApi } from '../services/cart'
 import { CartContext } from '../context/CartContext'
@@ -18,10 +20,15 @@ const Toast = ({ message, type, onClose }) => {
   }, [onClose])
 
   return (
-    <div className={`toast-notification ${type}`}>
-      {type === 'success' && <MdCheckCircle size={20} />}
+    <motion.div 
+      initial={{ opacity: 0, y: -20, x: '-50%' }} 
+      animate={{ opacity: 1, y: 0, x: '-50%' }} 
+      exit={{ opacity: 0, y: -20, x: '-50%' }}
+      className={`toast-notification ${type}`}
+    >
+      {type === 'success' ? <MdCheckCircle size={20} /> : <MdClose size={20} />}
       <span>{message}</span>
-    </div>
+    </motion.div>
   )
 }
 
@@ -31,6 +38,7 @@ const ProductDetails = () => {
   const navigate = useNavigate()
   const { user } = useContext(AuthContext)
   const { addToCart } = useContext(CartContext)
+  const mobileGalleryRef = useRef(null)
 
   // Data State
   const [product, setProduct] = useState(null)
@@ -68,6 +76,16 @@ const ProductDetails = () => {
     fetchProductData()
   }, [id])
 
+  // Handle Scroll on Mobile Gallery to update dots
+  const handleMobileScroll = () => {
+    if (mobileGalleryRef.current) {
+      const scrollLeft = mobileGalleryRef.current.scrollLeft
+      const width = mobileGalleryRef.current.offsetWidth
+      const index = Math.round(scrollLeft / width)
+      setSelectedImage(index)
+    }
+  }
+
   // Add to Cart Logic
   const handleAddToCart = async () => {
     if (!user) return navigate('/login', { state: { from: `/product/${id}` } })
@@ -75,22 +93,28 @@ const ProductDetails = () => {
 
     setAddingToCart(true)
     try {
-      await cartApi.addToCart({
-        product: id,
-        quantity,
-        selectedSize,
-        selectedColor
-      })
+      // API Call (Simulated if needed, or real)
+      if (cartApi && cartApi.addToCart) {
+         await cartApi.addToCart({
+          product: id,
+          quantity,
+          selectedSize,
+          selectedColor
+        })
+      }
 
+      // Context Update
       addToCart({
         _id: product._id,
         name: product.name,
         price: product.price,
         discountPrice: product.discountedPrice || null,
-        image: product.images[0]?.url
+        image: product.images[0]?.url,
+        selectedSize,
+        selectedColor
       }, quantity)
 
-      setToast({ message: 'Added to cart', type: 'success' })
+      setToast({ message: 'Added to cart successfully', type: 'success' })
     } catch (error) {
       setToast({ message: 'Could not add to cart', type: 'error' })
     } finally {
@@ -100,8 +124,19 @@ const ProductDetails = () => {
 
   const formatPrice = (price) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price)
 
-  if (loading) return <div className="loader-container"><div className="spinner"></div></div>
-  if (!product) return <div className="error-container"><h2>Product Not Found</h2><Link to="/" className="btn-primary">Go Home</Link></div>
+  if (loading) return (
+    <div className="loader-container">
+      <div className="spinner"></div>
+      <p>Loading your favorite item...</p>
+    </div>
+  )
+  
+  if (!product) return (
+    <div className="error-container">
+      <h2>Product Not Found</h2>
+      <Link to="/" className="btn-primary">Back to Store</Link>
+    </div>
+  )
 
   const discountPercentage = product.discountedPrice 
     ? Math.round(((product.price - product.discountedPrice) / product.price) * 100) 
@@ -109,31 +144,39 @@ const ProductDetails = () => {
 
   return (
     <div className="product-page">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      <AnimatePresence>
+        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      </AnimatePresence>
 
+      {/* --- Breadcrumbs --- */}
       <div className="container">
-        {/* Breadcrumbs */}
         <nav className="breadcrumbs">
-          <Link to="/">Home</Link> / <Link to="/products">Collection</Link> / <span className="current">{product.name}</span>
+          <Link to="/">Home</Link> <MdChevronRight />
+          <Link to="/products">Collection</Link> <MdChevronRight />
+          <span className="current">{product.name}</span>
         </nav>
+      </div>
 
+      <div className="container main-content">
         <div className="product-grid">
           
           {/* --- Left Column: Gallery --- */}
           <div className="gallery-section">
-            <div className="sticky-gallery">
+            
+            {/* Desktop Gallery (Stacked/Grid) */}
+            <div className="desktop-gallery">
               <div className="main-image-wrapper" onClick={() => setShowImageZoom(true)}>
                 <img 
                   src={product.images[selectedImage]?.url} 
                   alt={product.name} 
                   className="main-image"
                 />
-                <button className="zoom-trigger"><MdZoomIn size={20} /></button>
-                {discountPercentage > 0 && <span className="discount-tag">-{discountPercentage}%</span>}
+                <button className="zoom-trigger" title="Zoom Image"><MdZoomIn size={22} /></button>
+                {discountPercentage > 0 && <span className="discount-tag">-{discountPercentage}% OFF</span>}
               </div>
               
               {product.images.length > 1 && (
-                <div className="thumbnails-grid">
+                <div className="thumbnails-scroll">
                   {product.images.map((img, idx) => (
                     <div 
                       key={idx} 
@@ -141,11 +184,35 @@ const ProductDetails = () => {
                       onMouseEnter={() => setSelectedImage(idx)}
                       onClick={() => setSelectedImage(idx)}
                     >
-                      <img src={img.url} alt="" />
+                      <img src={img.url} alt={`View ${idx + 1}`} />
                     </div>
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Mobile Gallery (Swipeable) */}
+            <div className="mobile-gallery">
+              <div 
+                className="mobile-slider" 
+                ref={mobileGalleryRef}
+                onScroll={handleMobileScroll}
+              >
+                {product.images.map((img, idx) => (
+                  <div key={idx} className="mobile-slide" onClick={() => setShowImageZoom(true)}>
+                    <img src={img.url} alt={product.name} />
+                  </div>
+                ))}
+              </div>
+              {/* Mobile Dots */}
+              {product.images.length > 1 && (
+                <div className="mobile-dots">
+                  {product.images.map((_, idx) => (
+                    <span key={idx} className={`dot ${selectedImage === idx ? 'active' : ''}`} />
+                  ))}
+                </div>
+              )}
+              {discountPercentage > 0 && <span className="mobile-discount-tag">-{discountPercentage}%</span>}
             </div>
           </div>
 
@@ -155,7 +222,7 @@ const ProductDetails = () => {
             {/* Header */}
             <div className="product-header">
               <h1 className="title">{product.name}</h1>
-              <p className="subtitle">{product.shortDescription || "Elegant design crafted for perfection."}</p>
+              <p className="subtitle">{product.shortDescription || "Experience the perfect blend of tradition and modern elegance with this exquisite piece."}</p>
             </div>
 
             {/* Price */}
@@ -177,7 +244,7 @@ const ProductDetails = () => {
               {product.sizes?.length > 0 && (
                 <div className="selector-group">
                   <div className="label-row">
-                    <span className="label">Size</span>
+                    <span className="label">Select Size</span>
                     {selectedSize && <span className="selected-value">{selectedSize}</span>}
                   </div>
                   <div className="options-grid">
@@ -198,7 +265,7 @@ const ProductDetails = () => {
               {product.colors?.length > 0 && (
                 <div className="selector-group">
                   <div className="label-row">
-                    <span className="label">Color</span>
+                    <span className="label">Select Color</span>
                     {selectedColor && <span className="selected-value" style={{textTransform: 'capitalize'}}>{selectedColor}</span>}
                   </div>
                   <div className="colors-row">
@@ -209,14 +276,16 @@ const ProductDetails = () => {
                         style={{ backgroundColor: color }}
                         onClick={() => setSelectedColor(color)}
                         title={color}
-                      />
+                      >
+                        {selectedColor === color && <MdCheckCircle className="color-check" />}
+                      </button>
                     ))}
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Actions */}
+            {/* Actions (Desktop) */}
             <div className="actions-desktop">
               {/* Quantity */}
               <div className="qty-wrapper">
@@ -234,9 +303,9 @@ const ProductDetails = () => {
                 {product.stock <= 0 ? (
                   'Out of Stock'
                 ) : addingToCart ? (
-                  'Adding...'
+                  <span className="loading-dots">Adding...</span>
                 ) : (
-                  <>Add to Cart <MdArrowForward size={18}/></>
+                  <>Add to Cart <MdArrowForward size={20}/></>
                 )}
               </button>
 
@@ -250,15 +319,18 @@ const ProductDetails = () => {
               </button>
             </div>
 
+            {/* Stock Warning */}
             {product.stock < 10 && product.stock > 0 && (
-              <p className="stock-warning">Only {product.stock} units left in stock!</p>
+              <p className="stock-warning">
+                <span className="pulse-dot"></span> Only {product.stock} units left!
+              </p>
             )}
 
-            {/* Trust Badges (Static) */}
+            {/* Trust Badges */}
             <div className="trust-grid">
               <div className="trust-item">
                 <div className="icon-box"><MdVerifiedUser size={20} /></div>
-                <span>Authentic Quality</span>
+                <span>100% Authentic</span>
               </div>
               <div className="trust-item">
                 <div className="icon-box"><MdLocalShipping size={20} /></div>
@@ -266,7 +338,7 @@ const ProductDetails = () => {
               </div>
               <div className="trust-item">
                 <div className="icon-box"><MdCached size={20} /></div>
-                <span>Easy Returns</span>
+                <span>7 Days Return</span>
               </div>
             </div>
 
@@ -282,34 +354,48 @@ const ProductDetails = () => {
                     onClick={() => setActiveTab(tab)}
                   >
                     {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {activeTab === tab && <motion.div layoutId="underline" className="active-line" />}
                   </button>
                 ))}
               </div>
               
               <div className="tab-body">
-                {activeTab === 'description' && (
-                  <div className="desc-content">
-                    <p>{product.description}</p>
-                    {product.highlights && (
-                      <ul className="highlights-list">
-                        {product.highlights.map((hl, i) => <li key={i}>{hl}</li>)}
-                      </ul>
-                    )}
-                  </div>
-                )}
-
-                {activeTab === 'specifications' && (
-                  <table className="specs-table">
-                    <tbody>
-                      {Object.entries(product.specifications || {}).map(([key, val]) => (
-                        <tr key={key}>
-                          <td className="spec-key">{key}</td>
-                          <td className="spec-val">{val.toString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
+                <AnimatePresence mode="wait">
+                  {activeTab === 'description' ? (
+                    <motion.div 
+                      key="desc"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="desc-content"
+                    >
+                      <p>{product.description}</p>
+                      {product.highlights && (
+                        <ul className="highlights-list">
+                          {product.highlights.map((hl, i) => <li key={i}>{hl}</li>)}
+                        </ul>
+                      )}
+                    </motion.div>
+                  ) : (
+                    <motion.div 
+                      key="specs"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                    >
+                      <table className="specs-table">
+                        <tbody>
+                          {Object.entries(product.specifications || {}).map(([key, val]) => (
+                            <tr key={key}>
+                              <td className="spec-key">{key}</td>
+                              <td className="spec-val">{val.toString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
 
@@ -317,38 +403,53 @@ const ProductDetails = () => {
         </div>
       </div>
 
-      {/* Sticky Mobile Footer */}
+      {/* --- Sticky Mobile Footer --- */}
       <div className="mobile-footer">
         <div className="footer-info">
-          <span className="price-label">Total Price</span>
-          <span className="price-val">{formatPrice(product.discountedPrice || product.price)}</span>
+          <span className="price-label">Total for {quantity} item(s)</span>
+          <span className="price-val">{formatPrice((product.discountedPrice || product.price) * quantity)}</span>
         </div>
-        <button 
-          className="mobile-cta" 
-          onClick={handleAddToCart}
-          disabled={product.stock <= 0}
-        >
-          {product.stock <= 0 ? 'Out of Stock' : 'Add to Cart'}
-        </button>
+        <div className="footer-actions">
+          {/* Mobile Qty Popup could go here, for now simpler layout */}
+          <button 
+            className="mobile-cta" 
+            onClick={handleAddToCart}
+            disabled={product.stock <= 0 || addingToCart}
+          >
+            {product.stock <= 0 ? 'No Stock' : addingToCart ? '...' : 'Add to Cart'}
+          </button>
+        </div>
       </div>
 
-      {/* Zoom Modal */}
-      {showImageZoom && (
-        <div className="zoom-modal" onClick={() => setShowImageZoom(false)}>
-          <button className="zoom-close"><MdClose size={24} /></button>
-          <img src={product.images[selectedImage]?.url} alt="" onClick={e => e.stopPropagation()} />
-        </div>
-      )}
+      {/* --- Zoom Modal --- */}
+      <AnimatePresence>
+        {showImageZoom && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="zoom-modal" 
+            onClick={() => setShowImageZoom(false)}
+          >
+            <button className="zoom-close"><MdClose size={28} /></button>
+            <motion.img 
+              initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}
+              src={product.images[selectedImage]?.url} 
+              alt="Zoomed" 
+              onClick={e => e.stopPropagation()} 
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Styles */}
+      {/* --- CSS STYLES --- */}
       <style>{`
         :root {
           --primary: #e11d48;
           --primary-hover: #be123c;
           --text-main: #0f172a;
           --text-muted: #64748b;
-          --bg-page: #f8fafc;
+          --bg-page: #ffffff;
           --border: #e2e8f0;
+          --bg-subtle: #f8fafc;
         }
 
         .product-page {
@@ -362,294 +463,306 @@ const ProductDetails = () => {
         .container {
           max-width: 1280px;
           margin: 0 auto;
-          padding: 24px;
+          padding: 0 24px;
         }
+
+        /* Loader */
+        .loader-container {
+          height: 80vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: var(--text-muted);
+        }
+        .spinner {
+          width: 40px; height: 40px; border: 3px solid #f3f3f3; border-top: 3px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Error */
+        .error-container { text-align: center; padding-top: 100px; }
+        .btn-primary { display: inline-block; margin-top: 16px; padding: 10px 24px; background: var(--text-main); color: white; text-decoration: none; border-radius: 8px; }
 
         /* Breadcrumbs */
         .breadcrumbs {
-          font-size: 13px;
-          color: var(--text-muted);
-          margin-bottom: 24px;
+          display: flex; align-items: center; gap: 8px;
+          font-size: 13px; color: var(--text-muted);
+          padding: 20px 0;
         }
         .breadcrumbs a { text-decoration: none; color: var(--text-muted); transition: color 0.2s; }
         .breadcrumbs a:hover { color: var(--primary); }
         .breadcrumbs .current { color: var(--text-main); font-weight: 500; }
 
-        /* Grid */
+        /* Grid Layout */
+        .main-content { margin-top: 12px; }
         .product-grid {
           display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 48px;
+          grid-template-columns: 1.2fr 1fr;
+          gap: 64px;
           align-items: start;
         }
 
-        /* Gallery */
+        /* === Gallery Styles === */
         .gallery-section { position: relative; }
-        .sticky-gallery { position: sticky; top: 100px; }
+        .desktop-gallery { position: sticky; top: 100px; display: grid; gap: 16px; }
         
         .main-image-wrapper {
           position: relative;
           border-radius: 16px;
           overflow: hidden;
-          background: white;
-          aspect-ratio: 3/4;
+          background: var(--bg-subtle);
+          aspect-ratio: 4/5;
           cursor: zoom-in;
-          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
           border: 1px solid var(--border);
         }
-        .main-image { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s; }
+        .main-image { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s ease; }
         .main-image-wrapper:hover .main-image { transform: scale(1.05); }
         
         .discount-tag {
-          position: absolute;
-          top: 16px; left: 16px;
-          background: var(--primary);
-          color: white;
-          font-size: 12px;
-          font-weight: 700;
-          padding: 6px 12px;
-          border-radius: 20px;
+          position: absolute; top: 16px; left: 16px;
+          background: var(--primary); color: white;
+          font-size: 12px; font-weight: 700;
+          padding: 6px 12px; border-radius: 4px;
+          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
         }
         .zoom-trigger {
-          position: absolute;
-          bottom: 16px; right: 16px;
-          background: white;
-          border: none;
-          border-radius: 50%;
-          width: 40px; height: 40px;
+          position: absolute; bottom: 16px; right: 16px;
+          background: white; border: none; border-radius: 50%;
+          width: 44px; height: 44px;
           display: flex; align-items: center; justify-content: center;
           box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-          color: var(--text-main);
-          cursor: pointer;
-          transition: transform 0.2s;
+          color: var(--text-main); cursor: pointer;
+          transition: all 0.2s; opacity: 0; transform: translateY(10px);
         }
-        .zoom-trigger:hover { transform: scale(1.1); }
+        .main-image-wrapper:hover .zoom-trigger { opacity: 1; transform: translateY(0); }
 
-        .thumbnails-grid {
-          display: flex;
-          gap: 12px;
-          margin-top: 16px;
-          overflow-x: auto;
-          padding-bottom: 4px;
+        .thumbnails-scroll {
+          display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px;
         }
         .thumbnail {
-          width: 70px; height: 70px;
-          border-radius: 8px;
-          overflow: hidden;
-          cursor: pointer;
-          border: 2px solid transparent;
-          opacity: 0.6;
-          transition: all 0.2s;
-          flex-shrink: 0;
+          width: 80px; height: 80px; border-radius: 10px;
+          overflow: hidden; cursor: pointer;
+          border: 2px solid transparent; opacity: 0.7; transition: all 0.2s;
+          flex-shrink: 0; background: var(--bg-subtle);
         }
-        .thumbnail.active { border-color: var(--primary); opacity: 1; }
+        .thumbnail.active { border-color: var(--primary); opacity: 1; transform: translateY(-2px); }
         .thumbnail img { width: 100%; height: 100%; object-fit: cover; }
 
-        /* Details */
+        /* Mobile Gallery Hidden on Desktop */
+        .mobile-gallery { display: none; }
+
+        /* === Details Styles === */
+        .details-section { padding-top: 10px; }
         .product-header .title {
           font-family: 'Playfair Display', serif;
-          font-size: 32px;
-          font-weight: 700;
-          margin-bottom: 8px;
-          line-height: 1.2;
+          font-size: 36px; font-weight: 700;
+          margin-bottom: 12px; line-height: 1.2; letter-spacing: -0.5px;
         }
-        .subtitle { font-size: 16px; color: var(--text-muted); line-height: 1.5; }
+        .rating-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+        .stars { display: flex; color: #fbbf24; font-size: 18px; }
+        .reviews-count { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+        
+        .subtitle { font-size: 16px; color: var(--text-muted); line-height: 1.6; margin-bottom: 24px; }
 
-        .price-box { margin-top: 24px; }
-        .price-row { display: flex; align-items: baseline; gap: 12px; }
-        .final-price { font-size: 28px; font-weight: 700; color: var(--text-main); }
-        .mrp { font-size: 18px; text-decoration: line-through; color: var(--text-muted); }
-        .tax-note { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+        .price-box { margin-bottom: 32px; }
+        .price-row { display: flex; align-items: baseline; gap: 16px; }
+        .final-price { font-size: 32px; font-weight: 700; color: var(--text-main); letter-spacing: -1px; }
+        .mrp { font-size: 20px; text-decoration: line-through; color: var(--text-muted); font-weight: 400; }
+        .tax-note { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
 
         .divider { height: 1px; background: var(--border); margin: 32px 0; }
 
         /* Selectors */
-        .selectors-container { display: flex; flex-direction: column; gap: 24px; }
-        .label-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; font-weight: 600; }
-        .selected-value { color: var(--text-muted); font-weight: 400; margin-left: 8px; }
+        .selectors-container { display: flex; flex-direction: column; gap: 28px; }
+        .label-row { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px; font-weight: 600; }
+        .selected-value { color: var(--text-muted); font-weight: 400; }
         
-        .options-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+        .options-grid { display: flex; flex-wrap: wrap; gap: 12px; }
         .size-btn {
-          min-width: 48px; height: 40px;
-          padding: 0 16px;
-          background: white;
-          border: 1px solid var(--border);
-          border-radius: 8px;
-          font-size: 14px;
-          font-weight: 500;
-          color: var(--text-main);
-          cursor: pointer;
-          transition: all 0.2s;
+          min-width: 54px; height: 44px; padding: 0 16px;
+          background: white; border: 1px solid var(--border);
+          border-radius: 8px; font-size: 14px; font-weight: 600;
+          color: var(--text-main); cursor: pointer; transition: all 0.2s;
         }
-        .size-btn:hover { border-color: var(--text-muted); }
-        .size-btn.selected { background: var(--text-main); color: white; border-color: var(--text-main); }
+        .size-btn:hover { border-color: var(--text-main); }
+        .size-btn.selected { background: var(--text-main); color: white; border-color: var(--text-main); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
 
-        .colors-row { display: flex; gap: 12px; }
+        .colors-row { display: flex; gap: 14px; }
         .color-dot {
-          width: 32px; height: 32px;
-          border-radius: 50%;
-          border: 2px solid white;
-          box-shadow: 0 0 0 1px var(--border);
-          cursor: pointer;
-          transition: all 0.2s;
+          width: 36px; height: 36px; border-radius: 50%;
+          border: 2px solid white; box-shadow: 0 0 0 1px var(--border);
+          cursor: pointer; transition: all 0.2s;
+          display: flex; align-items: center; justify-content: center;
         }
         .color-dot:hover { transform: scale(1.1); }
-        .color-dot.selected { box-shadow: 0 0 0 2px var(--primary); }
+        .color-dot.selected { box-shadow: 0 0 0 2px var(--text-main); }
+        .color-check { color: white; font-size: 18px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); }
 
-        /* Actions */
-        .actions-desktop { display: flex; gap: 16px; margin-top: 32px; height: 50px; }
+        /* Desktop Actions */
+        .actions-desktop { display: flex; gap: 16px; margin-top: 40px; height: 52px; }
         
         .qty-wrapper {
           display: flex; align-items: center;
-          border: 1px solid var(--border);
-          border-radius: 8px;
-          background: white;
-          overflow: hidden;
+          border: 1px solid var(--border); border-radius: 10px;
+          background: white; overflow: hidden;
         }
         .qty-wrapper button {
-          width: 40px; height: 100%;
-          border: none; background: transparent;
-          font-size: 18px; color: var(--text-muted);
-          cursor: pointer;
-          transition: background 0.2s;
+          width: 44px; height: 100%; border: none; background: transparent;
+          font-size: 20px; color: var(--text-muted); cursor: pointer; transition: background 0.2s;
         }
-        .qty-wrapper button:hover { background: #f1f5f9; color: var(--text-main); }
-        .qty-val { width: 40px; text-align: center; font-weight: 600; }
+        .qty-wrapper button:hover { background: #f8fafc; color: var(--text-main); }
+        .qty-val { width: 40px; text-align: center; font-weight: 600; font-size: 16px; }
 
         .add-to-cart-btn {
-          flex: 1;
-          background: var(--text-main);
-          color: white;
-          border: none;
-          border-radius: 8px;
-          font-size: 16px;
-          font-weight: 600;
-          cursor: pointer;
-          display: flex; align-items: center; justify-content: center; gap: 8px;
-          transition: background 0.2s;
+          flex: 1; background: var(--text-main); color: white;
+          border: none; border-radius: 10px;
+          font-size: 16px; font-weight: 600;
+          cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;
+          transition: all 0.2s; box-shadow: 0 4px 12px rgba(15,23,42,0.15);
         }
-        .add-to-cart-btn:hover { background: #1e293b; }
-        .add-to-cart-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+        .add-to-cart-btn:hover { background: #1e293b; transform: translateY(-2px); }
+        .add-to-cart-btn:disabled { background: #94a3b8; cursor: not-allowed; transform: none; }
 
         .wishlist-btn {
-          width: 50px;
-          border: 1px solid var(--border);
-          background: white;
-          border-radius: 8px;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 24px; color: var(--text-muted);
-          cursor: pointer;
-          transition: all 0.2s;
+          width: 52px; border: 1px solid var(--border); background: white;
+          border-radius: 10px; display: flex; align-items: center; justify-content: center;
+          font-size: 24px; color: var(--text-muted); cursor: pointer; transition: all 0.2s;
         }
-        .wishlist-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .wishlist-btn:hover { border-color: var(--primary); color: var(--primary); background: #fff1f2; }
         .wishlist-btn.active { color: var(--primary); border-color: var(--primary); background: #fff1f2; }
 
-        .stock-warning { font-size: 13px; color: #dc2626; font-weight: 500; margin-top: 12px; }
+        .stock-warning { 
+          font-size: 13px; color: #b91c1c; font-weight: 600; margin-top: 16px; 
+          display: flex; align-items: center; gap: 8px;
+        }
+        .pulse-dot { width: 8px; height: 8px; background: #ef4444; border-radius: 50%; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 70% { box-shadow: 0 0 0 6px rgba(239,68,68,0); } 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); } }
 
         /* Trust Badges */
         .trust-grid {
           display: grid; grid-template-columns: repeat(3, 1fr);
-          gap: 16px; margin-top: 32px;
+          gap: 20px; margin-top: 40px;
         }
         .trust-item {
-          display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px;
+          display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px;
         }
         .icon-box {
-          width: 40px; height: 40px;
-          background: #f1f5f9;
-          border-radius: 50%;
-          display: flex; align-items: center; justify-content: center;
-          color: var(--text-main);
+          width: 48px; height: 48px; background: #f1f5f9; border-radius: 50%;
+          display: flex; align-items: center; justify-content: center; color: var(--text-main);
         }
-        .trust-item span { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+        .trust-item span { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 
         /* Tabs */
         .product-tabs { margin-top: 16px; }
-        .tabs-header { display: flex; gap: 32px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+        .tabs-header { display: flex; gap: 40px; border-bottom: 1px solid var(--border); margin-bottom: 24px; position: relative; }
         .tab-btn {
-          background: none; border: none;
-          padding: 12px 0;
-          font-size: 15px; font-weight: 600;
-          color: var(--text-muted);
-          cursor: pointer;
-          border-bottom: 2px solid transparent;
-          transition: all 0.2s;
+          background: none; border: none; padding: 16px 0;
+          font-size: 15px; font-weight: 600; color: var(--text-muted);
+          cursor: pointer; position: relative; transition: color 0.2s;
         }
-        .tab-btn.active { color: var(--text-main); border-bottom-color: var(--text-main); }
+        .tab-btn.active { color: var(--text-main); }
+        .active-line {
+          position: absolute; bottom: -1px; left: 0; right: 0; height: 2px;
+          background: var(--text-main);
+        }
         
-        .tab-body { font-size: 15px; line-height: 1.7; color: var(--text-muted); }
+        .tab-body { font-size: 15px; line-height: 1.8; color: var(--text-muted); min-height: 200px; }
         .highlights-list { padding-left: 20px; margin-top: 16px; }
         .specs-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        .specs-table td { padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+        .specs-table td { padding: 14px 0; border-bottom: 1px solid #f1f5f9; }
         .spec-key { color: var(--text-muted); width: 40%; }
         .spec-val { color: var(--text-main); font-weight: 500; }
 
-        /* Mobile Footer */
-        .mobile-footer {
-          display: none;
-          position: fixed; bottom: 0; left: 0; right: 0;
-          background: white;
-          padding: 12px 24px;
-          box-shadow: 0 -4px 20px rgba(0,0,0,0.05);
-          z-index: 100;
-          align-items: center; justify-content: space-between;
-          border-top: 1px solid var(--border);
-        }
-        .price-label { font-size: 12px; color: var(--text-muted); display: block; }
-        .price-val { font-size: 20px; font-weight: 700; color: var(--text-main); }
-        .mobile-cta {
-          background: var(--text-main);
-          color: white;
-          border: none;
-          padding: 12px 32px;
-          border-radius: 8px;
-          font-weight: 600;
-          font-size: 16px;
-        }
-
         /* Toast */
         .toast-notification {
-          position: fixed; top: 90px; right: 24px;
-          background: #1e293b; color: white;
-          padding: 12px 20px; border-radius: 8px;
-          display: flex; align-items: center; gap: 12px;
-          font-size: 14px; font-weight: 500;
-          z-index: 2000; animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-          box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+          position: fixed; top: 100px; left: 50%; transform: translateX(-50%);
+          background: #1e293b; color: white; padding: 12px 24px;
+          border-radius: 50px; display: flex; align-items: center; gap: 12px;
+          font-size: 14px; font-weight: 500; z-index: 2000;
+          box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
         }
         .toast-notification.error { background: #ef4444; }
-        @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
-        /* Zoom */
+        /* Mobile Footer (Hidden Desktop) */
+        .mobile-footer { display: none; }
+
+        /* Zoom Modal */
         .zoom-modal {
           position: fixed; inset: 0; background: rgba(255,255,255,0.98);
           z-index: 3000; display: flex; align-items: center; justify-content: center;
         }
-        .zoom-modal img { max-width: 95%; max-height: 95vh; object-fit: contain; }
+        .zoom-modal img { max-width: 95%; max-height: 95vh; object-fit: contain; cursor: zoom-out; }
         .zoom-close {
-          position: absolute; top: 24px; right: 24px;
-          background: none; border: none; cursor: pointer;
-          width: 48px; height: 48px; border-radius: 50%;
-          background: #f1f5f9; color: var(--text-main);
-          display: flex; align-items: center; justify-content: center;
+          position: absolute; top: 24px; right: 24px; background: #f1f5f9;
+          border: none; cursor: pointer; width: 48px; height: 48px; border-radius: 50%;
+          color: var(--text-main); display: flex; align-items: center; justify-content: center;
         }
 
-        /* Responsive */
+        /* --- RESPONSIVE DESIGN --- */
+        @media (max-width: 1024px) {
+          .product-grid { gap: 40px; }
+          .title { font-size: 30px; }
+        }
+
         @media (max-width: 900px) {
-          .container { padding: 16px; }
+          .container { padding: 0 16px; }
           .product-grid { grid-template-columns: 1fr; gap: 32px; }
-          .gallery-section { padding-bottom: 0; }
-          .sticky-gallery { position: relative; top: 0; }
-          .details-section { padding-bottom: 20px; }
+          
+          /* Switch Gallery to Mobile Mode */
+          .desktop-gallery { display: none; }
+          .mobile-gallery { display: block; position: relative; margin: 0 -16px; /* Bleed to edge */ }
+          
+          .mobile-slider {
+            display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
+            scrollbar-width: none; /* Hide scrollbar */
+          }
+          .mobile-slider::-webkit-scrollbar { display: none; }
+          
+          .mobile-slide {
+            flex: 0 0 100%; scroll-snap-align: center;
+            aspect-ratio: 4/5; position: relative;
+          }
+          .mobile-slide img { width: 100%; height: 100%; object-fit: cover; }
+          
+          .mobile-dots {
+            position: absolute; bottom: 16px; left: 0; right: 0;
+            display: flex; justify-content: center; gap: 8px; pointer-events: none;
+          }
+          .dot {
+            width: 8px; height: 8px; background: rgba(255,255,255,0.5); border-radius: 50%;
+            transition: all 0.2s; backdrop-filter: blur(4px);
+          }
+          .dot.active { background: white; transform: scale(1.2); }
+          
+          .mobile-discount-tag {
+            position: absolute; top: 16px; left: 16px;
+            background: var(--primary); color: white;
+            font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 4px;
+          }
+
+          /* Details adjustments */
+          .details-section { padding: 0 16px 24px 16px; }
+          .title { font-size: 26px; }
+          .final-price { font-size: 28px; }
           
           /* Hide Desktop Actions */
           .actions-desktop { display: none; }
           
           /* Show Mobile Footer */
-          .mobile-footer { display: flex; }
+          .mobile-footer {
+            display: flex; align-items: center; justify-content: space-between;
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: white; padding: 12px 20px;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.05);
+            z-index: 100; border-top: 1px solid var(--border);
+            padding-bottom: max(12px, env(safe-area-inset-bottom));
+          }
+          .footer-info { display: flex; flex-direction: column; }
+          .price-label { font-size: 11px; color: var(--text-muted); }
+          .price-val { font-size: 18px; font-weight: 700; color: var(--text-main); }
           
-          .trust-grid { margin-top: 0; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
-          .title { font-size: 24px; }
+          .mobile-cta {
+            background: var(--text-main); color: white; border: none;
+            padding: 12px 32px; border-radius: 8px; font-weight: 600; font-size: 15px;
+          }
+          
+          .trust-grid { padding-bottom: 24px; border-bottom: 1px solid var(--border); }
         }
       `}</style>
     </div>

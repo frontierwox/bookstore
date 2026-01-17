@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { 
   ArrowLeft, MapPin, CreditCard, Package, Truck, 
   CheckCircle, Clock, Calendar, AlertCircle, Loader2, 
-  Copy, Phone, Mail
+  Copy, Phone, Mail, Ticket, ShieldCheck, Printer
 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { orderApi } from '../services/orders'
@@ -85,11 +85,11 @@ const OrderDetails = () => {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50/50 py-6 px-4 md:px-8 font-sans">
+    <div className="min-h-screen bg-stone-50/50 py-6 px-4 md:px-8 font-sans print:bg-white print:p-0">
       <div className="max-w-6xl mx-auto">
         
         {/* --- Header Section --- */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-8 gap-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-8 gap-5 print:hidden">
           <div className="flex items-start gap-4">
             <Link 
               to="/orders" 
@@ -129,32 +129,41 @@ const OrderDetails = () => {
             </div>
           </div>
           
-          {/* Order Success Banner (Animated) */}
-          {location.state?.success && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="bg-emerald-50 text-emerald-800 px-5 py-3 rounded-xl border border-emerald-100 flex items-center gap-3 shadow-sm"
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => window.print()}
+              className="hidden sm:flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 hover:text-slate-900 transition-all text-sm font-medium shadow-sm"
             >
-              <div className="bg-emerald-100 p-1 rounded-full">
-                <CheckCircle size={18} className="text-emerald-600" />
-              </div>
-              <div>
-                <p className="font-bold text-sm">Thank you!</p>
-                <p className="text-xs text-emerald-600">Your order has been placed successfully.</p>
-              </div>
-            </motion.div>
-          )}
+              <Printer size={18} /> Print Order
+            </button>
+
+            {/* Order Success Banner (Animated) */}
+            {location.state?.success && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-emerald-50 text-emerald-800 px-5 py-3 rounded-xl border border-emerald-100 flex items-center gap-3 shadow-sm"
+              >
+                <div className="bg-emerald-100 p-1 rounded-full">
+                  <CheckCircle size={18} className="text-emerald-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-sm">Thank you!</p>
+                  <p className="text-xs text-emerald-600">Your order has been placed successfully.</p>
+                </div>
+              </motion.div>
+            )}
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 print:block">
           
           {/* --- LEFT COLUMN: Items & Addresses --- */}
           <div className="lg:col-span-2 space-y-6">
             
             {/* 1. Order Items */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/30 flex justify-between items-center">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden print:border print:shadow-none">
+              <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/30 flex justify-between items-center print:bg-slate-50">
                 <h2 className="font-bold text-slate-800 flex items-center gap-2">
                   <Package size={18} className="text-rose-600" /> Order Items
                 </h2>
@@ -218,10 +227,10 @@ const OrderDetails = () => {
             </div>
 
             {/* 2. Shipping & Payment Info Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 print:grid-cols-2">
               
               {/* Shipping Address */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col h-full">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col h-full print:shadow-none print:border">
                 <h3 className="font-bold text-slate-900 mb-4 pb-3 border-b border-slate-50 flex items-center gap-2">
                   <MapPin size={18} className="text-rose-600" /> Delivery Details
                 </h3>
@@ -242,7 +251,7 @@ const OrderDetails = () => {
               </div>
 
               {/* Payment Info */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col h-full">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col h-full print:shadow-none print:border">
                 <h3 className="font-bold text-slate-900 mb-4 pb-3 border-b border-slate-50 flex items-center gap-2">
                   <CreditCard size={18} className="text-rose-600" /> Payment Info
                 </h3>
@@ -256,10 +265,10 @@ const OrderDetails = () => {
                   <div>
                     <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Payment Status</span>
                     <div className="mt-1">
-                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase ${order.paymentStatus === 'paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
-                         {order.paymentStatus === 'paid' && <CheckCircle size={12} />}
-                         {order.paymentStatus}
-                       </span>
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase ${order.paymentStatus === 'paid' || order.paymentStatus === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
+                          {(order.paymentStatus === 'paid' || order.paymentStatus === 'completed') && <CheckCircle size={12} />}
+                          {order.paymentStatus}
+                        </span>
                     </div>
                   </div>
                   {order.paymentDetails?.transactionId && (
@@ -277,28 +286,52 @@ const OrderDetails = () => {
           </div>
 
           {/* --- RIGHT COLUMN: Summary & Timeline --- */}
-          <div className="space-y-6">
+          <div className="space-y-6 print:mt-6">
             
-            {/* 1. Order Summary (Cleaned) */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+            {/* 1. Order Summary */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print:shadow-none print:border">
               <h3 className="font-serif font-bold text-lg text-slate-900 mb-5">Order Summary</h3>
               
-              <div className="space-y-3">
-                <div className="flex justify-between text-slate-600 text-sm">
-                  <span>Item Total</span>
+              <div className="space-y-3 text-sm">
+                
+                {/* Use originalSubtotal (MSRP) to allow discount logic to flow visually */}
+                <div className="flex justify-between text-slate-600">
+                  <span>Subtotal</span>
                   <span className="font-medium text-slate-900">
-                    {formatPrice(order.subtotal || order.originalSubtotal || order.totalAmount)}
+                    {formatPrice(order.originalSubtotal || order.subtotal || order.totalAmount)}
                   </span>
                 </div>
                 
-                {order.discount > 0 && (
-                  <div className="flex justify-between text-emerald-600 text-sm">
-                    <span>Discount</span>
-                    <span>-{formatPrice(order.discount)}</span>
+                {/* Product Discounts (e.g. Sale Price) */}
+                {(order.discountApplied > 0 || order.discount > 0) && (
+                  <div className="flex justify-between text-emerald-600">
+                    <span>Product Disc.</span>
+                    <span>-{formatPrice(order.discountApplied || order.discount)}</span>
                   </div>
                 )}
 
-                {/* NOTE: Tax and Shipping removed as requested */}
+                {/* Coupon Discounts - Distinct Style */}
+                {order.couponDiscount > 0 && (
+                  <div className="flex justify-between text-rose-600 bg-rose-50/50 px-2 py-1 rounded -mx-2">
+                    <span className="flex items-center gap-1.5">
+                      <Ticket size={14} />
+                      <span>Coupon ({order.couponDetails?.code})</span>
+                    </span>
+                    <span>-{formatPrice(order.couponDiscount)}</span>
+                  </div>
+                )}
+
+                {/* Shipping */}
+                <div className="flex justify-between text-slate-600">
+                  <span>Shipping</span>
+                  <span>{order.shippingCost === 0 ? 'Free' : formatPrice(order.shippingCost)}</span>
+                </div>
+
+                {/* Tax */}
+                <div className="flex justify-between text-slate-600">
+                  <span>GST (18%)</span>
+                  <span>{formatPrice(order.tax)}</span>
+                </div>
 
                 <div className="border-t border-dashed border-slate-200 my-3"></div>
 
@@ -311,8 +344,8 @@ const OrderDetails = () => {
               </div>
             </div>
 
-            {/* 2. Tracking Timeline */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+            {/* 2. Tracking Timeline (Hidden in Print usually, but kept for context) */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print:hidden">
               <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
                 <Truck size={18} className="text-rose-600" /> Tracking Status
               </h3>
@@ -323,8 +356,8 @@ const OrderDetails = () => {
                   <div className="absolute top-2 left-[7px] bottom-6 w-0.5 bg-slate-100" />
                   
                   <div className="space-y-8">
-                    {/* Display history in reverse chronological order usually, but sticking to array order */}
-                    {order.statusHistory.map((history, idx) => (
+                    {/* Reverse history so latest is on top */}
+                    {[...order.statusHistory].reverse().map((history, idx) => (
                       <div key={idx} className="relative pl-8 group">
                         {/* Dot */}
                         <div className={`absolute left-0 top-1.5 w-4 h-4 rounded-full border-[3px] z-10 bg-white
@@ -332,7 +365,7 @@ const OrderDetails = () => {
                         />
                         
                         <div>
-                          <p className={`font-bold text-sm ${idx === 0 ? 'text-slate-900' : 'text-slate-500'}`}>
+                          <p className={`font-bold text-sm capitalize ${idx === 0 ? 'text-slate-900' : 'text-slate-500'}`}>
                             {history.status}
                           </p>
                           <p className="text-xs text-slate-400 mt-0.5 font-medium">
@@ -358,7 +391,7 @@ const OrderDetails = () => {
             </div>
 
             {/* Need Help? */}
-            <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 text-center">
+            <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 text-center print:hidden">
               <p className="text-sm text-slate-600 mb-2">Need help with this order?</p>
               <Link to="/contact" className="text-sm font-bold text-rose-600 hover:text-rose-700 hover:underline">
                 Contact Support

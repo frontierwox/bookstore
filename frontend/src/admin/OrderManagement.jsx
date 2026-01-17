@@ -31,7 +31,7 @@ const ORDER_STATUSES = [
 const OrderManagement = () => {
   // --- State ---
   const [orders, setOrders] = useState([]);
-  const [stats, setStats] = useState({ total: 0, pending: 0, revenue: 0 });
+  const [stats, setStats] = useState({ total: 0, pendingAction: 0, revenue: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
@@ -71,13 +71,26 @@ const OrderManagement = () => {
       };
 
       const data = await adminApi.getOrders(params);
-      setOrders(data.orders || []);
+      const allOrders = data.orders || [];
+      
+      setOrders(allOrders);
       setTotalPages(Math.ceil((data.total || 0) / 10));
       
+      // --- UPDATED STATS LOGIC ---
+      // Revenue: Only 'delivered' orders
+      const completedRevenue = allOrders
+        .filter(o => o.status === 'delivered')
+        .reduce((acc, curr) => acc + curr.totalAmount, 0);
+
+      // Pending Action: Active orders (Not delivered, Not cancelled)
+      const pendingCount = allOrders
+        .filter(o => o.status !== 'delivered' && o.status !== 'cancelled')
+        .length;
+
       setStats({
         total: data.total || 0,
-        pending: (data.orders || []).filter(o => o.status === 'pending').length,
-        revenue: (data.orders || []).reduce((acc, curr) => acc + curr.totalAmount, 0)
+        pendingAction: pendingCount,
+        revenue: completedRevenue
       });
 
     } catch (error) {
@@ -125,6 +138,9 @@ const OrderManagement = () => {
       // Optimistic update
       setOrders(prev => prev.map(o => o._id === orderId ? { ...o, status: newStatus } : o));
       
+      // Re-fetch to update stats correctly if status changed to/from delivered/cancelled
+      fetchData(); 
+
       toast.success(`Order marked as ${newStatus}`, { id: toastId });
       setConfirmModal({ isOpen: false, orderId: null, newStatus: '', currentStatus: '' });
     } catch (error) {
@@ -166,8 +182,8 @@ const OrderManagement = () => {
         {/* --- Stats Overview --- */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
           <StatCard label="Total Orders" value={stats.total} icon={<CheckCircle size={22} />} color="blue" />
-          <StatCard label="Pending Action" value={stats.pending} icon={<Clock size={22} />} color="amber" />
-          <StatCard label="Recent Revenue" value={formatPrice(stats.revenue)} icon={<CreditCard size={22} />} color="emerald" />
+          <StatCard label="Pending Action" value={stats.pendingAction} icon={<Clock size={22} />} color="amber" />
+          <StatCard label="Completed Revenue" value={formatPrice(stats.revenue)} icon={<CreditCard size={22} />} color="emerald" />
         </div>
 
         {/* --- Controls Section --- */}

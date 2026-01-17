@@ -3,7 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   LayoutDashboard, ShoppingBag, BarChart2, ClipboardList, 
-  Package, Settings, LogOut, Menu, X, ChevronRight, Store
+  Package, LogOut, Menu, X, ChevronRight, Store, Ticket
 } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 
@@ -21,14 +21,16 @@ const AdminLayout = () => {
 
   const handleLogout = () => {
     logout();
-    navigate('/admin/login');
+    navigate('/login'); // Redirect to normal login if needed
   };
 
+  // Added 'Coupons' to the menu items
   const menuItems = [
     { path: '/admin/dashboard', label: 'Overview', icon: LayoutDashboard },
     { path: '/admin/products', label: 'Products', icon: ShoppingBag },
     { path: '/admin/orders', label: 'Orders', icon: ClipboardList },
     { path: '/admin/stock', label: 'Inventory', icon: Package },
+    { path: '/admin/coupons', label: 'Coupons', icon: Ticket },
     { path: '/admin/analytics', label: 'Analytics', icon: BarChart2 }
   ];
 
@@ -37,7 +39,7 @@ const AdminLayout = () => {
       {/* Sidebar Header */}
       <div className="h-16 flex items-center px-6 border-b border-slate-100">
         <Link to="/admin/dashboard" className="flex items-center gap-2 font-serif text-xl font-bold text-slate-900 tracking-tight">
-          Luxe Admin<span className="text-rose-600">.</span>
+          Admin<span className="text-rose-600">.</span>
         </Link>
       </div>
 
@@ -92,10 +94,11 @@ const AdminLayout = () => {
   );
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
+    // Used dvh (dynamic viewport height) for better mobile browser support
+    <div className="flex h-screen md:h-screen bg-slate-50 overflow-hidden">
       
       {/* --- Desktop Sidebar --- */}
-      <aside className="hidden md:block w-64 flex-shrink-0 h-full">
+      <aside className="hidden md:block w-64 flex-shrink-0 h-full bg-white shadow-sm z-30">
         <SidebarContent />
       </aside>
 
@@ -103,24 +106,28 @@ const AdminLayout = () => {
       <AnimatePresence>
         {isSidebarOpen && (
           <>
+            {/* Backdrop: High Z-Index to cover everything */}
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsSidebarOpen(false)}
-              className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 md:hidden"
+              className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] md:hidden"
             />
+            {/* Drawer: Z-Index 70 to sit on top of backdrop */}
             <motion.aside 
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-2xl md:hidden"
+              className="fixed inset-y-0 left-0 z-[70] w-[80%] max-w-xs bg-white shadow-2xl md:hidden"
             >
               <SidebarContent />
+              
+              {/* Close Button specific for mobile */}
               <button 
                 onClick={() => setIsSidebarOpen(false)}
-                className="absolute top-4 right-[-3rem] p-2 bg-white rounded-full text-slate-900 shadow-lg"
+                className="absolute top-3 right-[-3rem] p-2 bg-white rounded-full text-slate-900 shadow-lg active:scale-95 transition-transform"
               >
                 <X size={20} />
               </button>
@@ -130,14 +137,16 @@ const AdminLayout = () => {
       </AnimatePresence>
 
       {/* --- Main Content Area --- */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         
         {/* Top Header */}
-        <header className="h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 bg-white border-b border-slate-200">
+        <header className="h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 bg-white border-b border-slate-200 z-20">
           <div className="flex items-center gap-4">
+            {/* Mobile Hamburger Trigger */}
             <button 
               onClick={() => setIsSidebarOpen(true)}
-              className="md:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+              className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors active:scale-95"
+              aria-label="Open Sidebar"
             >
               <Menu size={24} />
             </button>
@@ -157,7 +166,7 @@ const AdminLayout = () => {
         </header>
 
         {/* Scrollable Content */}
-        <main className="flex-1 overflow-y-auto focus:outline-none scroll-smooth">
+        <main className="flex-1 overflow-y-auto focus:outline-none scroll-smooth p-4 md:p-6 lg:p-8">
           <Outlet />
         </main>
       </div>

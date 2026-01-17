@@ -24,6 +24,23 @@ const adminApi = {
     return response.data;
   },
 
+  // Coupons
+createCoupon: async (couponData) => {
+  const response = await api.post('/admin/coupons', couponData);
+  return response.data;
+},
+
+getCoupons: async () => {
+  const response = await api.get('/admin/coupons');
+  return response.data;
+},
+
+deleteCoupon: async (couponId) => {
+  const response = await api.delete(`/admin/coupons/${couponId}`);
+  return response.data;
+},
+
+
   // Products
   getProducts: async (params = {}) => {
     const response = await api.get('/admin/products', { params });

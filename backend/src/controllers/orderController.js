@@ -1,11 +1,11 @@
 const Order = require('../models/Order');
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
+const Coupon = require('../models/Coupon'); // Moved to top
 const { validationResult } = require('express-validator');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { SHIPPING, TAX_RATE } = require('../config/constants');
 const { sendOrderConfirmation, sendOrderShipped, sendOrderDelivered, sendAdminNotification } = require('../utils/emailService');
-
 
 const generateOrderNumber = () => {
   const timestamp = Date.now().toString(36).toUpperCase();
@@ -22,20 +22,19 @@ exports.createOrder = asyncHandler(async (req, res) => {
     throw new AppError(400, errors.array()[0].msg);
   }
 
-  const { items, shippingAddress, paymentMethod } = req.body;
+  const { items, shippingAddress, paymentMethod, couponCode } = req.body;
 
   if (!Array.isArray(items) || items.length === 0) {
     throw new AppError(400, 'Order items are required');
   }
 
   const orderItems = [];
-
   let originalSubtotal = 0;
   let subtotal = 0;
   let totalDiscount = 0;
-
   const appliedDiscounts = [];
 
+  // 1. Process Items & Calculate Base Totals
   for (const item of items) {
     const product = await Product.findById(item.product);
     if (!product) {
@@ -45,7 +44,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     if (product.stock < item.quantity) {
       throw new AppError(400, `Insufficient stock for ${product.name}`);
     }
-
+    
     const unitPrice = product.getCurrentPrice();
     const originalUnitPrice = product.price;
 
@@ -78,12 +77,63 @@ exports.createOrder = asyncHandler(async (req, res) => {
     });
   }
 
+  // 2. Initialize Calculation Variables
   const shippingCost = subtotal >= SHIPPING.FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING.DEFAULT_COST;
-  const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
-  const totalAmount = subtotal + shippingCost + tax;
+  let finalSubtotal = subtotal; 
+  let couponDiscount = 0;
+  let couponDetails = null;
 
+  // 3. Apply Coupon Logic
+  if (couponCode) {
+    const coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
+
+    if (coupon && coupon.isValid()) {
+      // Validate Minimum Order Value
+      if (finalSubtotal >= coupon.minOrderValue) {
+        
+        // Scope Check: Global vs Specific
+        if (coupon.scope === 'all') {
+          couponDiscount = (finalSubtotal * coupon.discountPercentage) / 100;
+        } else {
+          // Specific Products Only
+          const applicableIds = coupon.applicableProducts.map(id => id.toString());
+          let eligibleAmount = 0;
+          
+          orderItems.forEach(item => {
+            if (applicableIds.includes(item.product.toString())) {
+              eligibleAmount += (item.price * item.quantity);
+            }
+          });
+          
+          if (eligibleAmount > 0) {
+            couponDiscount = (eligibleAmount * coupon.discountPercentage) / 100;
+          }
+        }
+        
+        // If discount applied, save usage stats
+        if (couponDiscount > 0) {
+          coupon.usedCount += 1;
+          await coupon.save();
+
+          couponDetails = {
+            code: coupon.code,
+            discountAmount: Math.round(couponDiscount), // Ensure round numbers for storage
+            percentage: coupon.discountPercentage
+          };
+        }
+      }
+    }
+  }
+
+  // 4. Final Calculations (Tax applied on post-discount amount)
+  // Ensure we don't calculate tax on negative amounts if discount > subtotal
+  const taxableAmount = Math.max(0, finalSubtotal - couponDiscount);
+  const tax = Math.round(taxableAmount * TAX_RATE * 100) / 100;
+  
+  const totalAmount = Math.round(finalSubtotal - couponDiscount + shippingCost + tax);
   const initialStatus = paymentMethod === 'cod' ? 'confirmed' : 'pending';
 
+  // 5. Create Order
   const order = await Order.create({
     orderNumber: generateOrderNumber(),
     user: req.user._id,
@@ -94,10 +144,12 @@ exports.createOrder = asyncHandler(async (req, res) => {
     paymentMethod,
     originalSubtotal,
     subtotal,
+    couponDiscount,
+    couponDetails,
     discountApplied: totalDiscount,
     shippingCost,
     tax,
-    discount: totalDiscount,
+    discount: totalDiscount, // This is product-level discount
     discountDetails: {
       totalDiscount,
       appliedDiscounts
@@ -107,23 +159,27 @@ exports.createOrder = asyncHandler(async (req, res) => {
     estimatedDelivery: new Date(Date.now() + SHIPPING.ESTIMATED_DELIVERY_DAYS * 24 * 60 * 60 * 1000)
   });
 
+  // 6. Update Stock
   for (const item of orderItems) {
     await Product.findByIdAndUpdate(item.product, {
       $inc: { stock: -item.quantity }
     });
   }
 
+  // 7. Clear Cart
   await Cart.findOneAndUpdate(
     { user: req.user._id },
     { items: [] }
   );
 
+  // 8. Add Status History
   order.statusHistory.push({
     status: initialStatus,
     note: initialStatus === 'confirmed' ? 'Order placed (COD)' : 'Order created, awaiting payment'
   });
   await order.save();
 
+  // 9. Send Notifications
   const shouldSendConfirmationNow = paymentMethod !== 'razorpay' && paymentMethod !== 'card';
 
   if (shouldSendConfirmationNow) {

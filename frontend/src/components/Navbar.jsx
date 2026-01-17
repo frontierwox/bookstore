@@ -8,36 +8,33 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { AuthContext } from '../context/AuthContext'
 import { CartContext } from '../context/CartContext'
 
-const Navbar = ({ appName = "Luxe Sarees" }) => {
+const Navbar = ({}) => {
   const { user, logout } = useContext(AuthContext)
   const { itemCount } = useContext(CartContext) || { itemCount: 0 }
-  
+
   const navigate = useNavigate()
   const location = useLocation()
   const dropdownRef = useRef(null)
 
   // --- State ---
-  const [isVisible, setIsVisible] = useState(true) // For scroll hide/show
+  const [isVisible, setIsVisible] = useState(true)
   const [lastScrollY, setLastScrollY] = useState(0)
-  const [isScrolled, setIsScrolled] = useState(false) // For background style
+  const [isScrolled, setIsScrolled] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
 
-  // --- Scroll Logic (The Magic) ---
+  // --- Effects ---
   useEffect(() => {
     const controlNavbar = () => {
       const currentScrollY = window.scrollY
-
-      // Determine background style
       setIsScrolled(currentScrollY > 20)
 
-      // Determine visibility (Hide on down, Show on up)
       if (currentScrollY > lastScrollY && currentScrollY > 100 && !mobileMenuOpen) {
-        setIsVisible(false) // Scroll Down -> Hide
+        setIsVisible(false)
       } else {
-        setIsVisible(true)  // Scroll Up -> Show
+        setIsVisible(true)
       }
 
       setLastScrollY(currentScrollY)
@@ -47,14 +44,12 @@ const Navbar = ({ appName = "Luxe Sarees" }) => {
     return () => window.removeEventListener('scroll', controlNavbar)
   }, [lastScrollY, mobileMenuOpen])
 
-  // --- Navigation Resets ---
   useEffect(() => {
     setMobileMenuOpen(false)
     setShowUserMenu(false)
     setMobileSearchOpen(false)
   }, [location])
 
-  // --- Click Outside User Menu ---
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -64,6 +59,12 @@ const Navbar = ({ appName = "Luxe Sarees" }) => {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  // ✅ SAFE: conditional return AFTER hooks
+  if (location.pathname.startsWith('/admin')) {
+    return null
+  }
+
 
   // --- Handlers ---
   const handleSearch = (e) => {
@@ -80,11 +81,14 @@ const Navbar = ({ appName = "Luxe Sarees" }) => {
       <header 
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 transform 
           ${isVisible ? 'translate-y-0' : '-translate-y-full'}
-          ${isScrolled ? 'bg-white/95 backdrop-blur-md shadow-sm py-3' : 'bg-white border-b border-gray-100 py-4'}
+          ${isScrolled 
+            ? 'bg-white/90 backdrop-blur-md shadow-sm py-2' 
+            : 'bg-white border-b border-transparent py-4'
+          }
         `}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between gap-4 h-10">
+          <div className="flex items-center justify-between gap-4 h-12">
             
             {/* 1. LEFT: Hamburger (Mobile) & Logo */}
             <div className="flex items-center gap-3">
@@ -93,12 +97,12 @@ const Navbar = ({ appName = "Luxe Sarees" }) => {
                 onClick={() => setMobileMenuOpen(true)}
                 aria-label="Open Menu"
               >
-                <MdMenu size={26} />
+                <MdMenu size={28} />
               </button>
 
               <Link to="/" className="flex items-center gap-2 group">
-                <h1 className="font-serif text-2xl font-bold tracking-tight text-slate-900 group-hover:text-rose-600 transition-colors">
-                  {appName}
+                <h1 className="font-Alice text-xl font-bold tracking-tight text-slate-900 group-hover:text-rose-600 transition-colors">
+                  Sri Sai Saree Collections
                 </h1>
               </Link>
             </div>
@@ -123,26 +127,26 @@ const Navbar = ({ appName = "Luxe Sarees" }) => {
             </div>
 
             {/* 3. RIGHT: Actions */}
-            <div className="flex items-center gap-1 sm:gap-2">
+            <div className="flex items-center gap-1 sm:gap-3">
               
               {/* Mobile Search Toggle */}
               <button 
                 onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
-                className={`lg:hidden p-2.5 rounded-full transition-colors ${mobileSearchOpen ? 'bg-rose-50 text-rose-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                className={`lg:hidden p-2 rounded-full transition-colors ${mobileSearchOpen ? 'bg-rose-50 text-rose-600' : 'text-slate-600 hover:bg-slate-50'}`}
               >
-                <MdSearch size={24} />
+                <MdSearch size={26} />
               </button>
 
               {/* Cart Icon */}
-<Link
-  to="/cart"
-  className="flex items-center gap-2 relative px-3 py-2 text-slate-700 hover:text-rose-600 transition-colors group"
->
-  <MdShoppingCart size={24} />
-    <span className="text-sm font-medium whitespace-nowrap">
-      My Cart
-    </span>
-</Link>
+              <Link
+                to="/cart"
+                className="relative p-2 text-slate-700 hover:text-rose-600 transition-colors group flex items-center gap-2"
+              >
+                <div className="relative">
+                  <MdShoppingCart size={26} />
+                </div>
+                <span className="hidden sm:block text-sm font-medium">Cart</span>
+              </Link>
 
               {/* User Menu (Desktop + Mobile Dropdown) */}
               <div className="relative" ref={dropdownRef}>
@@ -152,7 +156,7 @@ const Navbar = ({ appName = "Luxe Sarees" }) => {
                       onClick={() => setShowUserMenu(!showUserMenu)}
                       className="flex items-center gap-2 p-1 pl-2 rounded-full hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-200 ml-1"
                     >
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-100 to-rose-200 flex items-center justify-center text-rose-700 font-bold text-sm shadow-inner">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-rose-100 to-rose-200 flex items-center justify-center text-rose-700 font-bold text-sm shadow-inner border border-rose-200">
                         {user.name?.charAt(0).toUpperCase()}
                       </div>
                       <span className="hidden md:block text-sm font-medium text-slate-700 max-w-[80px] truncate pr-2">
@@ -177,7 +181,7 @@ const Navbar = ({ appName = "Luxe Sarees" }) => {
                           
                           <div className="py-2">
                             {user.role === 'admin' ? (
-                              <DropdownItem to="/admin" icon={<MdDashboard size={18}/>} label="Admin Dashboard" />
+                              <DropdownItem to="/admin/dashboard" icon={<MdDashboard size={18}/>} label="Admin Dashboard" />
                             ) : (
                               <DropdownItem to="/profile" icon={<MdPerson size={18}/>} label="My Profile" />
                             )}
@@ -248,7 +252,7 @@ const Navbar = ({ appName = "Luxe Sarees" }) => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 lg:hidden"
+              className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[60] lg:hidden"
               onClick={() => setMobileMenuOpen(false)}
             />
             
@@ -258,10 +262,10 @@ const Navbar = ({ appName = "Luxe Sarees" }) => {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              className="fixed top-0 left-0 bottom-0 w-[85%] max-w-xs bg-white z-[60] shadow-2xl lg:hidden flex flex-col"
+              className="fixed top-0 left-0 bottom-0 w-[85%] max-w-xs bg-white z-[70] shadow-2xl lg:hidden flex flex-col"
             >
               <div className="p-5 flex items-center justify-between border-b border-slate-100 bg-slate-50/50">
-                <span className="font-serif text-xl font-bold text-slate-900">{appName}</span>
+                <span className="font-serif text-lg font-bold text-slate-900">Sri Sai Saree Collections</span>
                 <button 
                   onClick={() => setMobileMenuOpen(false)} 
                   className="p-2 -mr-2 text-slate-400 hover:text-slate-900 rounded-full hover:bg-slate-100 transition-colors"
@@ -289,6 +293,9 @@ const Navbar = ({ appName = "Luxe Sarees" }) => {
                       </div>
                       <MobileLink to="/profile" onClick={() => setMobileMenuOpen(false)} icon={<MdPerson />}>Profile</MobileLink>
                       <MobileLink to="/orders" onClick={() => setMobileMenuOpen(false)} icon={<MdShoppingBag />}>Orders</MobileLink>
+                      {user.role === 'admin' && (
+                         <MobileLink to="/admin/dashboard" onClick={() => setMobileMenuOpen(false)} icon={<MdDashboard />}>Admin Panel</MobileLink>
+                      )}
                       <button 
                         onClick={() => { logout(); setMobileMenuOpen(false); }}
                         className="w-full flex items-center px-4 py-3.5 text-red-600 hover:bg-red-50 rounded-xl transition-colors font-medium text-sm mt-2"
@@ -367,9 +374,9 @@ const MobileLink = ({ to, children, onClick, icon }) => {
 const DropdownItem = ({ to, icon, label }) => (
   <Link 
     to={to} 
-    className="flex items-center px-5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 hover:text-rose-600 transition-colors"
+    className="flex items-center px-5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 hover:text-rose-600 transition-colors group"
   >
-    <span className="mr-3 text-slate-400 group-hover:text-rose-500">{icon}</span>
+    <span className="mr-3 text-slate-400 group-hover:text-rose-500 transition-colors">{icon}</span>
     {label}
   </Link>
 )

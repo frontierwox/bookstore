@@ -29,9 +29,10 @@ import OrderManagement from './admin/OrderManagement';
 import StockControl from './admin/StockControl';
 import AdminProductForm from './admin/AdminProductForm';
 import AdminOrderDetails from './admin/AdminOrderDetails';
+import AdminCouponManager from './admin/AdminCouponManager';
 
 function App() {
-  const appName = import.meta.env.VITE_APP_NAME || 'Saree Store';
+  const appName = import.meta.env.VITE_APP_NAME || 'Sri Sai Saree';
 
   return (
     <ErrorBoundary>
@@ -115,11 +116,12 @@ function App() {
                       <Route path="products" element={<ProductManagementDashboard />} />
                       <Route path="products/new" element={<AdminProductForm mode="create" />} />
                       <Route path="products/:id/edit" element={<AdminProductForm mode="edit" />} />
+                      <Route path="products/edit/:id" element={<AdminProductForm mode="edit" />} />
+                      <Route path="coupons" element={<AdminCouponManager />} />
                       <Route path="analytics" element={<SalesAnalyticsDashboard />} />
                       <Route path="orders" element={<OrderManagement />} />
                       <Route path="orders/:id" element={<AdminOrderDetails />} />
                       <Route path="stock" element={<StockControl />} />
-                      <Route path="settings" element={<div className="coming-soon"><h2>Settings</h2><p>Coming soon...</p></div>} />
                     </Route>
 
                     {/* 404 Route */}

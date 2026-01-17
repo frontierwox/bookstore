@@ -3,6 +3,12 @@ const { adminLogin } = require('../controllers/authController');
 const router = express.Router();
 const User = require('../models/User');
 const {
+  createCoupon,
+  getAllCoupons,
+  deleteCoupon
+} = require('../controllers/CouponController');
+
+const {
   getDashboardStats: getAdminDashboardStats,
   getAllUsers,
   getUserDetails,
@@ -77,6 +83,11 @@ router.post('/products/upload', upload.single('image'), uploadImage);  // POST /
 
 // Product discount management
 router.put('/products/:id/discount', updateProductDiscount);  // PUT /api/admin/products/:id/discount
+
+// Coupon management
+router.post('/coupons', createCoupon);          // POST /api/admin/coupons
+router.get('/coupons', getAllCoupons);           // GET  /api/admin/coupons
+router.delete('/coupons/:id', deleteCoupon);     // DELETE /api/admin/coupons/:id
 
 // Analytics routes
 router.get('/analytics/overview', getAnalyticsOverview);  // GET /api/admin/analytics/overview

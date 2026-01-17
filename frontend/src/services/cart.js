@@ -25,12 +25,20 @@ export const clearCart = async () => {
   return response.data;
 };
 
+// --- UPDATED FUNCTION ---
+export const validateCoupon = async (couponData) => {
+  // Updated URL to match the route in backend/routes/cart.js
+  const response = await api.post('/cart/validate-coupon', couponData);
+  return response.data;
+};
+
 export const cartApi = {
   getCart,
   addToCart,
   updateCartItem,
   removeFromCart,
-  clearCart
+  clearCart,
+  validateCoupon // Ensure this is exported
 };
 
 export default cartApi;

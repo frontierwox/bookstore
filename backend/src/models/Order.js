@@ -94,15 +94,8 @@ const orderSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  // --- EXISTING PRODUCT DISCOUNT FIELDS ---
   discountApplied: {
-    type: Number,
-    default: 0
-  },
-  shippingCost: {
-    type: Number,
-    default: 0
-  },
-  tax: {
     type: Number,
     default: 0
   },
@@ -126,6 +119,25 @@ const orderSchema = new mongoose.Schema({
       discountAmount: Number,
       finalPrice: Number
     }]
+  },
+  // --- NEW COUPON FIELDS ADDED HERE ---
+  couponDiscount: {
+    type: Number,
+    default: 0
+  },
+  couponDetails: {
+    code: String,
+    discountAmount: Number,
+    percentage: Number
+  },
+  // ------------------------------------
+  shippingCost: {
+    type: Number,
+    default: 0
+  },
+  tax: {
+    type: Number,
+    default: 0
   },
   totalAmount: {
     type: Number,

@@ -7,13 +7,21 @@ const {
   removeFromCart, 
   clearCart 
 } = require('../controllers/cartController');
+
+// 1. Import the Coupon Controller
+const { validateCoupon } = require('../controllers/CouponController'); 
+
 const { verifyToken } = require('../middleware/auth');
 
-// All routes protected
-router.get('/', verifyToken, getCart);  // GET /api/cart
-router.post('/add', verifyToken, addToCart);  // POST /api/cart/add
-router.put('/:productId', verifyToken, updateCartItem);  // PUT /api/cart/:productId
-router.delete('/:productId', verifyToken, removeFromCart);  // DELETE /api/cart/:productId
-router.delete('/', verifyToken, clearCart);  // DELETE /api/cart
+// All routes protected (Base URL: /api/cart)
+router.get('/', verifyToken, getCart);
+router.post('/add', verifyToken, addToCart);
+router.put('/:productId', verifyToken, updateCartItem);
+router.delete('/:productId', verifyToken, removeFromCart);
+router.delete('/', verifyToken, clearCart);
+
+// 2. Add the Validation Route here
+// Final URL will be: POST /api/cart/validate-coupon
+router.post('/validate-coupon', verifyToken, validateCoupon); 
 
 module.exports = router;

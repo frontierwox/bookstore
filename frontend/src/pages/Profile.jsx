@@ -1,11 +1,11 @@
 import React, { useState, useContext, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
-  User, Mail, Phone, Camera, Save, Loader2, 
+  User, Mail, Phone, Save, Loader2, 
   Package, MapPin, LogOut, ChevronRight, CheckCircle 
 } from 'lucide-react'
 import { AuthContext } from '../context/AuthContext'
-import { authApi } from '../services/auth' // Assuming you have an update profile endpoint
+import { authApi } from '../services/auth'
 
 const Profile = () => {
   const { user, logout } = useContext(AuthContext)
@@ -23,7 +23,6 @@ const Profile = () => {
   // Load user data on mount
   useEffect(() => {
     if (user) {
-      // Split name if stored as single string, or use directly
       const nameParts = user.name ? user.name.split(' ') : ['', '']
       setFormData({
         firstName: nameParts[0] || '',
@@ -37,7 +36,7 @@ const Profile = () => {
   const handleChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
-    if (success) setSuccess('') // Clear success message on edit
+    if (success) setSuccess('')
   }
 
   const handleSubmit = async (e) => {
@@ -46,7 +45,7 @@ const Profile = () => {
     try {
       // Simulate API call
       // await authApi.updateProfile({ name: `${formData.firstName} ${formData.lastName}`, ... })
-      await new Promise(resolve => setTimeout(resolve, 1000)) // Fake delay
+      await new Promise(resolve => setTimeout(resolve, 1000))
       
       setSuccess('Profile updated successfully')
       setTimeout(() => setSuccess(''), 3000)
@@ -60,8 +59,6 @@ const Profile = () => {
   // Navigation Items
   const navItems = [
     { id: 'profile', label: 'My Profile', icon: <User size={20} /> },
-    { id: 'orders', label: 'My Orders', icon: <Package size={20} /> },
-    { id: 'addresses', label: 'Addresses', icon: <MapPin size={20} /> },
   ]
 
   return (
@@ -80,14 +77,16 @@ const Profile = () => {
           <aside className="w-full lg:w-64 flex-shrink-0">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden sticky top-24">
               
-              {/* User Mini-Profile in Sidebar */}
+              {/* User Mini-Summary (Read-only) */}
               <div className="p-6 border-b border-slate-100 flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-serif text-xl font-bold">
-                  {formData.firstName?.[0]}
+                <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-600">
+                  <User size={24} />
                 </div>
                 <div className="overflow-hidden">
-                  <p className="font-medium text-slate-900 truncate">{formData.firstName} {formData.lastName}</p>
-                  <p className="text-xs text-slate-500 truncate">{formData.email}</p>
+                  <p className="font-medium text-slate-900 truncate">
+                    {formData.firstName || 'User'} {formData.lastName}
+                  </p>
+                  <p className="text-xs text-slate-500 truncate">{formData.email || 'user@example.com'}</p>
                 </div>
               </div>
 
@@ -127,6 +126,8 @@ const Profile = () => {
           {/* Main Content Area */}
           <main className="flex-1">
             <AnimatePresence mode='wait'>
+              
+              {/* --- PROFILE TAB --- */}
               {activeTab === 'profile' && (
                 <motion.div
                   key="profile"
@@ -149,23 +150,6 @@ const Profile = () => {
                     )}
                   </div>
 
-                  {/* Avatar Upload Section */}
-                  <div className="flex items-center gap-6 mb-8 pb-8 border-b border-slate-100">
-                    <div className="relative">
-                      <div className="w-24 h-24 rounded-full bg-slate-100 border-4 border-white shadow-md flex items-center justify-center text-3xl font-serif text-slate-400">
-                         {formData.firstName?.[0]}
-                      </div>
-                      <button className="absolute bottom-0 right-0 p-2 bg-slate-900 text-white rounded-full hover:bg-rose-600 transition-colors shadow-sm">
-                        <Camera size={16} />
-                      </button>
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-slate-900">Profile Photo</h3>
-                      <p className="text-sm text-slate-500 mt-1">Accepts JPG, GIF or PNG. Max size of 800K</p>
-                    </div>
-                  </div>
-
-                  {/* Edit Form */}
                   <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <InputGroup 
@@ -217,36 +201,6 @@ const Profile = () => {
                   </form>
                 </motion.div>
               )}
-
-              {activeTab === 'orders' && (
-                 <motion.div 
-                    key="orders"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-2xl shadow-sm border border-slate-100 p-10 flex flex-col items-center justify-center text-center min-h-[400px]"
-                 >
-                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-                        <Package size={32} className="text-slate-300" />
-                    </div>
-                    <h3 className="text-lg font-medium text-slate-900">No Orders Yet</h3>
-                    <p className="text-slate-500 mt-2 max-w-sm">When you place orders, they will appear here for you to track.</p>
-                 </motion.div>
-              )}
-
-                {activeTab === 'addresses' && (
-                 <motion.div 
-                    key="addresses"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-2xl shadow-sm border border-slate-100 p-10 flex flex-col items-center justify-center text-center min-h-[400px]"
-                 >
-                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-                        <MapPin size={32} className="text-slate-300" />
-                    </div>
-                    <h3 className="text-lg font-medium text-slate-900">No Saved Addresses</h3>
-                    <p className="text-slate-500 mt-2 max-w-sm">Save shipping addresses at checkout for faster delivery.</p>
-                 </motion.div>
-              )}
             </AnimatePresence>
           </main>
         </div>
@@ -255,7 +209,7 @@ const Profile = () => {
   )
 }
 
-// Reusable Input Component with consistent styling
+// Reusable Input Component
 const InputGroup = ({ label, icon, disabled, ...props }) => (
   <div className="space-y-1.5">
     <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 pl-1">{label}</label>

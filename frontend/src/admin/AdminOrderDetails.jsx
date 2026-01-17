@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { 
   ArrowLeft, Printer, Mail, Truck, MapPin, 
   User, CreditCard, Calendar, ChevronDown, CheckCircle, 
-  AlertTriangle, Loader2, X, Package, ShieldCheck 
+  AlertTriangle, Loader2, Package, ShieldCheck, Ticket
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { adminApi } from '../services/admin';
@@ -20,18 +20,17 @@ const AdminOrderDetails = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Modal State (Unified for both Status and Email actions)
+  // Modal State
   const [confirmation, setConfirmation] = useState({
     isOpen: false,
     type: null, // 'status' | 'email'
-    data: null, // the status string or email type string
+    data: null, 
     isLoading: false
   });
 
   // --- Effects ---
   useEffect(() => {
     fetchOrder();
-    // Click outside to close dropdown
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setIsDropdownOpen(false);
@@ -56,13 +55,9 @@ const AdminOrderDetails = () => {
     }
   };
 
-  // 1. Trigger Confirmation Modal
   const requestAction = (type, data) => {
-    setIsDropdownOpen(false); // Close dropdown if open
-    
-    // Prevent updating to the same status
+    setIsDropdownOpen(false);
     if (type === 'status' && order.status === data) return;
-
     setConfirmation({
       isOpen: true,
       type,
@@ -71,7 +66,6 @@ const AdminOrderDetails = () => {
     });
   };
 
-  // 2. Execute Action
   const executeAction = async () => {
     setConfirmation(prev => ({ ...prev, isLoading: true }));
     const { type, data } = confirmation;
@@ -79,7 +73,7 @@ const AdminOrderDetails = () => {
     try {
       if (type === 'status') {
         await adminApi.updateOrderStatus(id, { status: data });
-        await fetchOrder(); // Refresh data
+        await fetchOrder();
         toast.success(`Order status updated to ${data}`);
       } else if (type === 'email') {
         await adminApi.resendOrderEmail(id, { emailType: data });
@@ -253,21 +247,48 @@ const AdminOrderDetails = () => {
                 </table>
               </div>
               
-              {/* Totals Section */}
+              {/* Financial Totals Section */}
               <div className="px-6 py-5 bg-slate-50/30 border-t border-slate-100">
                 <div className="max-w-xs ml-auto space-y-2.5 text-sm">
+                  
+                  {/* Base Subtotal (Sticker Price) */}
                   <div className="flex justify-between text-slate-500">
-                    <span>Item Total</span>
+                    <span>Subtotal</span>
                     <span className="font-medium text-slate-700">{formatPrice(order.originalSubtotal || order.subtotal)}</span>
                   </div>
+
+                  {/* Product Discounts (e.g. Sale Price) */}
                   {(order.discountApplied > 0 || order.discount > 0) && (
                     <div className="flex justify-between text-emerald-600 bg-emerald-50/50 px-2 py-1 rounded -mx-2">
-                      <span>Discount</span>
+                      <span>Product Disc.</span>
                       <span>-{formatPrice(order.discountApplied || order.discount)}</span>
                     </div>
                   )}
-                  {/* Tax and Shipping removed as requested */}
+
+                  {/* Coupon Discounts */}
+                  {order.couponDiscount > 0 && (
+                    <div className="flex justify-between text-rose-600 bg-rose-50/50 px-2 py-1 rounded -mx-2">
+                      <span className="flex items-center gap-1.5">
+                        <Ticket size={14} />
+                        <span>Coupon ({order.couponDetails?.code})</span>
+                      </span>
+                      <span>-{formatPrice(order.couponDiscount)}</span>
+                    </div>
+                  )}
+
+                  {/* Shipping */}
+                  <div className="flex justify-between text-slate-600">
+                    <span>Shipping</span>
+                    <span>{order.shippingCost === 0 ? 'Free' : formatPrice(order.shippingCost)}</span>
+                  </div>
+
+                  {/* Tax */}
+                  <div className="flex justify-between text-slate-600">
+                     <span>Tax (GST)</span>
+                     <span>{formatPrice(order.tax)}</span>
+                  </div>
                   
+                  {/* Final Total */}
                   <div className="flex justify-between text-lg font-bold text-slate-900 pt-3 border-t border-slate-200 mt-2">
                     <span>Total Amount</span>
                     <span>{formatPrice(order.totalAmount)}</span>
@@ -362,7 +383,7 @@ const AdminOrderDetails = () => {
                  <div className="flex justify-between text-sm items-center">
                    <span className="text-slate-500">Status</span>
                    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ring-1 ring-inset ${
-                     order.paymentStatus === 'paid' 
+                     order.paymentStatus === 'paid' || order.paymentStatus === 'completed'
                       ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' 
                       : order.paymentStatus === 'failed' 
                         ? 'bg-red-50 text-red-700 ring-red-200' 
