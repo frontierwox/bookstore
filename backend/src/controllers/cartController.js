@@ -1,16 +1,85 @@
+// controllers/cartController.js
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
 const { validationResult } = require('express-validator');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 
-// Helper to populate cart
-const populateCart = async (cart) => {
-  return await cart.populate('items.product', 'name price images stock discountedPrice discountPercentage discountStartDate discountEndDate');
+// ✅ HELPER: Recalculate Totals
+// Fixed to access nested retail/wholesale settings from Product Schema
+const recalculateCart = async (cart, userRole = 'user') => {
+  // 1. Ensure products are populated with necessary fields
+  // Added 'retail' and 'wholesale' fields to selection
+  await cart.populate({
+    path: 'items.product',
+    select: 'name price images stock wholesalePrice retail wholesale isDiscountActive discountPercentage discountStartDate discountEndDate'
+  });
+
+  let subtotal = 0;
+  let totalShipping = 0;
+  let totalTax = 0;
+  let totalItems = 0;
+  
+  // 2. Filter out invalid items (deleted products)
+  cart.items = cart.items.filter(item => item.product != null);
+
+  // 3. Iterate and Calculate
+  for (const item of cart.items) {
+    const product = item.product;
+    const qty = item.quantity;
+
+    // --- A. DETERMINE PRICE ---
+    let unitPrice;
+    if (userRole === 'reseller') {
+      // Reseller: Use Wholesale Price if set, otherwise Retail Price
+      unitPrice = product.wholesalePrice > 0 ? product.wholesalePrice : product.price;
+    } else {
+      // Retail: Use method if available (handles discounts), else raw price
+      unitPrice = typeof product.getCurrentPrice === 'function'
+        ? product.getCurrentPrice('user')
+        : (product.discountedPrice || product.price);
+    }
+
+    // Update item price in DB to match current catalog
+    item.price = unitPrice;
+    const lineTotal = unitPrice * qty;
+
+    // --- B. DETERMINE TAX & SHIPPING (FIXED) ---
+    // Access nested schema fields based on role
+    let logisticsSettings;
+    if (userRole === 'reseller') {
+      logisticsSettings = product.wholesale || { shippingCost: 0, taxPercentage: 0 };
+    } else {
+      logisticsSettings = product.retail || { shippingCost: 0, taxPercentage: 0 };
+    }
+
+    const itemShipping = (logisticsSettings.shippingCost || 0) * qty;
+    const itemTax = (lineTotal * (logisticsSettings.taxPercentage || 0)) / 100;
+
+    // Save item-level breakdowns
+    item.shippingAmount = Math.round(itemShipping * 100) / 100;
+    item.taxAmount = Math.round(itemTax * 100) / 100;
+
+    // Add to Totals
+    subtotal += lineTotal;
+    totalShipping += itemShipping;
+    totalTax += itemTax;
+    totalItems += qty;
+  }
+
+  // 4. Update Root Fields
+  cart.subtotal = Math.round(subtotal * 100) / 100;
+  cart.totalShipping = Math.round(totalShipping * 100) / 100;
+  cart.totalTax = Math.round(totalTax * 100) / 100;
+  cart.totalItems = totalItems;
+  
+  // Grand Total = Subtotal + Tax + Shipping
+  cart.totalAmount = Math.round((cart.subtotal + cart.totalShipping + cart.totalTax) * 100) / 100;
+
+  return cart.save();
 };
 
 // @desc    Get user's cart
 // @route   GET /api/cart
-// @access  Private
 exports.getCart = asyncHandler(async (req, res) => {
   let cart = await Cart.findOne({ user: req.user._id });
 
@@ -18,61 +87,44 @@ exports.getCart = asyncHandler(async (req, res) => {
     cart = await Cart.create({ user: req.user._id, items: [] });
   }
 
-  // Check for price updates
-  await populateCart(cart);
-  let shouldSave = false;
-
-  cart.items.forEach(item => {
-    const product = item.product;
-    if (product && typeof product.getCurrentPrice === 'function') {
-      const currentPrice = product.getCurrentPrice();
-      if (item.price !== currentPrice) {
-        item.price = currentPrice;
-        shouldSave = true;
-      }
-    }
-  });
-
-  if (shouldSave) {
-    await cart.save();
-  }
+  // Refresh prices and calculations on every load
+  await recalculateCart(cart, req.user.role);
 
   res.json({ success: true, cart });
 });
 
 // @desc    Add item to cart
 // @route   POST /api/cart/add
-// @access  Private
 exports.addToCart = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
+  if (!errors.isEmpty()) throw new AppError(400, errors.array()[0].msg);
 
   const { product, quantity, selectedSize, selectedColor } = req.body;
-
+  
   const productDoc = await Product.findById(product);
   if (!productDoc) throw new AppError(404, 'Product not found');
   if (productDoc.stock < quantity) throw new AppError(400, 'Insufficient stock');
 
   let cart = await Cart.findOne({ user: req.user._id });
-  if (!cart) {
-    cart = await Cart.create({ user: req.user._id, items: [] });
-  }
+  if (!cart) cart = await Cart.create({ user: req.user._id, items: [] });
 
   const existingItemIndex = cart.items.findIndex(
     item => item.product.toString() === product &&
-            item.selectedSize === selectedSize &&
-            item.selectedColor === selectedColor
+    item.selectedSize === selectedSize &&
+    item.selectedColor === selectedColor
   );
 
-  const unitPrice = typeof productDoc.getCurrentPrice === 'function'
-    ? productDoc.getCurrentPrice()
-    : productDoc.price;
+  // Determine Initial Price
+  let unitPrice;
+  if (req.user.role === 'reseller') {
+    unitPrice = productDoc.wholesalePrice > 0 ? productDoc.wholesalePrice : productDoc.price;
+  } else {
+    unitPrice = productDoc.getCurrentPrice('user');
+  }
 
   if (existingItemIndex > -1) {
     cart.items[existingItemIndex].quantity += quantity;
-    cart.items[existingItemIndex].price = unitPrice; // Update price on add
+    cart.items[existingItemIndex].price = unitPrice;
   } else {
     cart.items.push({
       product,
@@ -83,151 +135,122 @@ exports.addToCart = asyncHandler(async (req, res) => {
     });
   }
 
-  await cart.save();
-  await populateCart(cart);
+  // ✅ Recalculate totals (Shipping, Tax, Subtotal)
+  await recalculateCart(cart, req.user.role);
 
   res.json({ success: true, message: 'Item added to cart', cart });
 });
 
 // @desc    Update cart item quantity
 // @route   PUT /api/cart/:itemId
-// @access  Private
 exports.updateCartItem = asyncHandler(async (req, res) => {
-  // 1. Manual validation check (safety net)
   const { quantity } = req.body;
-  if (!quantity || quantity < 1) {
-    throw new AppError(400, 'Quantity must be at least 1');
-  }
+  if (!quantity || quantity < 1) throw new AppError(400, 'Quantity must be at least 1');
 
   const cart = await Cart.findOne({ user: req.user._id });
   if (!cart) throw new AppError(404, 'Cart not found');
 
-  // 2. Robust ID Lookup (Handles both ItemID and ProductID)
   const identifier = req.params.productId || req.params.itemId;
   
-  // Find index of the item
+  // Find item
   const itemIndex = cart.items.findIndex(i => 
     i._id.toString() === identifier || i.product.toString() === identifier
   );
 
-  if (itemIndex === -1) {
-    throw new AppError(404, 'Item not found in cart');
-  }
+  if (itemIndex === -1) throw new AppError(404, 'Item not found in cart');
 
-  const item = cart.items[itemIndex];
-
-  // 3. Check Stock
-  // We need to fetch the product to check stock, as it might not be populated yet if we just fetched the cart
-  const product = await Product.findById(item.product);
-  
+  // Check stock
+  const product = await Product.findById(cart.items[itemIndex].product);
   if (!product) {
-    // Edge case: Product was deleted from DB but is still in cart
-    cart.items.pull(item._id);
-    await cart.save();
+    cart.items.splice(itemIndex, 1);
+    await recalculateCart(cart, req.user.role);
     throw new AppError(404, 'Product no longer exists');
   }
 
-  if (product.stock < quantity) {
-    throw new AppError(400, `Only ${product.stock} items available`);
-  }
+  if (product.stock < quantity) throw new AppError(400, `Only ${product.stock} items available`);
 
-  // 4. Update
+  // Update Quantity
   cart.items[itemIndex].quantity = quantity;
-  cart.items[itemIndex].price = typeof product.getCurrentPrice === 'function' ? product.getCurrentPrice() : product.price;
-
-  await cart.save();
-  await populateCart(cart);
+  
+  // ✅ Recalculate
+  await recalculateCart(cart, req.user.role);
 
   res.json({ success: true, message: 'Cart updated', cart });
 });
 
 // @desc    Remove item from cart
 // @route   DELETE /api/cart/:itemId
-// @access  Private
 exports.removeFromCart = asyncHandler(async (req, res) => {
   const cart = await Cart.findOne({ user: req.user._id });
   if (!cart) throw new AppError(404, 'Cart not found');
 
   const identifier = req.params.productId || req.params.itemId;
 
-  // Find the item to ensure it exists
-  const item = cart.items.find(i => 
-    i._id.toString() === identifier || i.product.toString() === identifier
+  const initialLength = cart.items.length;
+  cart.items = cart.items.filter(i => 
+    i._id.toString() !== identifier && i.product.toString() !== identifier
   );
 
-  if (!item) {
-    throw new AppError(404, 'Item not found in cart');
-  }
+  if (cart.items.length === initialLength) throw new AppError(404, 'Item not found');
 
-  // FIX: Use pull() on the array instead of item.remove()
-  cart.items.pull(item._id);
-
-  await cart.save();
-  await populateCart(cart);
+  await recalculateCart(cart, req.user.role);
 
   res.json({ success: true, message: 'Item removed', cart });
 });
 
 // @desc    Clear cart
-// @route   DELETE /api/cart/clear
-// @access  Private
 exports.clearCart = asyncHandler(async (req, res) => {
   const cart = await Cart.findOne({ user: req.user._id });
   if (!cart) throw new AppError(404, 'Cart not found');
 
   cart.items = [];
+  cart.subtotal = 0;
+  cart.totalShipping = 0;
+  cart.totalTax = 0;
+  cart.totalAmount = 0;
+  cart.totalItems = 0;
+  
   await cart.save();
 
   res.json({ success: true, message: 'Cart cleared', cart });
 });
 
-// @desc    Merge cart
-// @route   POST /api/cart/merge
-// @access  Private
+// @desc    Merge cart (Login)
 exports.mergeCart = asyncHandler(async (req, res) => {
   const { guestCartItems } = req.body;
-  if (!guestCartItems || !Array.isArray(guestCartItems)) {
-    throw new AppError(400, 'Invalid guest cart items');
-  }
+  if (!guestCartItems || !Array.isArray(guestCartItems)) throw new AppError(400, 'Invalid items');
 
   let cart = await Cart.findOne({ user: req.user._id });
+  if (!cart) cart = await Cart.create({ user: req.user._id, items: [] });
 
-  if (!cart) {
-    cart = await Cart.create({ user: req.user._id, items: guestCartItems });
-  } else {
-    for (const guestItem of guestCartItems) {
-      const existingItemIndex = cart.items.findIndex(
-        item => item.product.toString() === guestItem.product &&
-                item.selectedSize === guestItem.selectedSize &&
-                item.selectedColor === guestItem.selectedColor
-      );
+  for (const guestItem of guestCartItems) {
+    const productDoc = await Product.findById(guestItem.product);
+    if (!productDoc) continue;
 
-      if (existingItemIndex > -1) {
-        cart.items[existingItemIndex].quantity += guestItem.quantity;
-      } else {
-        cart.items.push(guestItem);
-      }
+    let unitPrice;
+    if (req.user.role === 'reseller') {
+      unitPrice = productDoc.wholesalePrice > 0 ? productDoc.wholesalePrice : productDoc.price;
+    } else {
+      unitPrice = productDoc.getCurrentPrice('user');
+    }
+
+    const existingItemIndex = cart.items.findIndex(
+      item => item.product.toString() === guestItem.product &&
+              item.selectedSize === guestItem.selectedSize &&
+              item.selectedColor === guestItem.selectedColor
+    );
+
+    if (existingItemIndex > -1) {
+      cart.items[existingItemIndex].quantity += guestItem.quantity;
+      cart.items[existingItemIndex].price = unitPrice;
+    } else {
+      cart.items.push({
+        ...guestItem,
+        price: unitPrice
+      });
     }
   }
 
-  await cart.save();
-  // Perform price update check
-  await populateCart(cart);
-  
-  // Logic to refresh prices after merge
-  let shouldSave = false;
-  cart.items.forEach(item => {
-    const product = item.product;
-    if (product && typeof product.getCurrentPrice === 'function') {
-      const currentPrice = product.getCurrentPrice();
-      if (item.price !== currentPrice) {
-        item.price = currentPrice;
-        shouldSave = true;
-      }
-    }
-  });
-
-  if (shouldSave) await cart.save();
-
+  await recalculateCart(cart, req.user.role);
   res.json({ success: true, message: 'Cart merged', cart });
 });

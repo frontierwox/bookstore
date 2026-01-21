@@ -4,362 +4,173 @@ const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const { validationResult } = require('express-validator');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
-const { sendOrderConfirmation, sendAdminNotification } = require('../utils/emailService');
+const { sendPaymentConfirmed, sendAdminNotification } = require('../utils/emailService');
 
-// Initialize Razorpay (only if keys are provided)
+// Initialize Razorpay
 let razorpay = null;
 if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
   razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
     key_secret: process.env.RAZORPAY_KEY_SECRET
   });
+} else {
+  console.warn("WARNING: Razorpay keys are missing in environment variables.");
 }
 
-// @desc    Create Razorpay order
+// @desc    Create Razorpay Order (Secure)
 // @route   POST /api/payments/create-order
 // @access  Private
 exports.createRazorpayOrder = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
+  if (!razorpay) throw new AppError(500, 'Payment gateway not configured');
 
-  if (!razorpay) {
-    throw new AppError(500, 'Razorpay is not configured');
-  }
+  const { orderId } = req.body;
+  if (!orderId) throw new AppError(400, 'Order ID is required');
 
-  const { amount, currency = 'INR' } = req.body;
+  // 1. Fetch Order from DB to ensure amount is correct (Security)
+  const order = await Order.findById(orderId);
+  if (!order) throw new AppError(404, 'Order not found');
 
+  // 2. Create Razorpay Order
   const options = {
-    amount: amount * 100, // Razorpay expects amount in paise
-    currency,
-    receipt: `receipt_${Date.now()}`,
-    notes: {
-      userId: req.user._id.toString()
-    }
+    amount: Math.round(order.totalAmount * 100), // Amount in smallest currency unit (paise)
+    currency: 'INR',
+    receipt: `receipt_${order.orderNumber}`,
+    payment_capture: 1 // Auto capture
   };
 
   try {
-    const razorpayOrder = await razorpay.orders.create(options);
-
+    const response = await razorpay.orders.create(options);
+    
     res.json({
       success: true,
-      order: razorpayOrder
+      id: response.id,
+      currency: response.currency,
+      amount: response.amount,
+      key: process.env.RAZORPAY_KEY_ID // Send key to frontend safely
     });
   } catch (error) {
-    throw new AppError(500, 'Failed to create payment order');
+    console.error("Razorpay Error:", error);
+    throw new AppError(502, 'Failed to create payment order with gateway');
   }
 });
 
-// @desc    Verify payment
+// @desc    Verify Razorpay Payment
 // @route   POST /api/payments/verify
 // @access  Private
 exports.verifyPayment = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
+  const { 
+    razorpay_order_id, 
+    razorpay_payment_id, 
+    razorpay_signature, 
+    orderId 
+  } = req.body;
+
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !orderId) {
+    throw new AppError(400, 'Missing payment verification details');
   }
 
-  const { razorpayOrderId, razorpayPaymentId, razorpaySignature, orderId } = req.body;
+  const order = await Order.findById(orderId).populate('user', 'name email');
+  if (!order) throw new AppError(404, 'Order not found');
 
-  // Verify signature
-  const shasum = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET);
-  shasum.update(`${razorpayOrderId}|${razorpayPaymentId}`);
-  const digest = shasum.digest('hex');
+  // 1. Verify Signature (HMAC SHA256)
+  const body = razorpay_order_id + "|" + razorpay_payment_id;
+  
+  const expectedSignature = crypto
+    .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+    .update(body.toString())
+    .digest('hex');
 
-  if (digest !== razorpaySignature) {
-    throw new AppError(400, 'Invalid payment signature');
-  }
+  const isAuthentic = expectedSignature === razorpay_signature;
 
-  // Find order
-  const order = await Order.findById(orderId);
-  if (!order) {
-    throw new AppError(404, 'Order not found');
-  }
-
-  // Create or update payment record
-  const payment = await Payment.findOneAndUpdate(
-    { order: orderId },
-    {
-      order: orderId,
+  if (isAuthentic) {
+    // 2. Save Payment Record
+    const payment = await Payment.create({
+      order: order._id,
       user: req.user._id,
       amount: order.totalAmount,
       paymentMethod: 'razorpay',
       paymentStatus: 'completed',
       razorpayDetails: {
-        orderId: razorpayOrderId,
-        paymentId: razorpayPaymentId,
-        signature: razorpaySignature
+        orderId: razorpay_order_id,
+        paymentId: razorpay_payment_id,
+        signature: razorpay_signature
       },
-      transactionId: razorpayPaymentId
-    },
-    { upsert: true, new: true }
-  );
+      transactionId: razorpay_payment_id
+    });
 
-  // Update order payment status/details
-  order.paymentStatus = 'completed';
-  order.paymentDetails = {
-    razorpayOrderId,
-    razorpayPaymentId,
-    razorpaySignature,
-    transactionId: razorpayPaymentId
-  };
+    // 3. Update Order Status
+    order.paymentStatus = 'completed'; // or 'paid'
+    order.status = 'processing'; // Move from pending to processing
+    order.paymentDetails = {
+      razorpayOrderId: razorpay_order_id,
+      razorpayPaymentId: razorpay_payment_id,
+      razorpaySignature: razorpay_signature,
+      transactionId: razorpay_payment_id
+    };
+    
+    await order.save();
 
-  const previousStatus = order.status;
-  if (order.status === 'pending') {
-    order.status = 'confirmed';
-  }
-
-  order.statusHistory.push({
-    status: order.status,
-    note: previousStatus === order.status ? 'Payment verified' : 'Payment verified and order confirmed'
-  });
-
-  await order.save();
-
-  // Send confirmation email after successful payment
-  if (!order.emailNotifications?.confirmationSent) {
+    // 4. Send Confirmation Emails
     try {
-      await sendOrderConfirmation(order);
-      order.emailNotifications.confirmationSent = true;
-      order.emailNotifications.confirmationSentAt = new Date();
-      order.emailSent = true;
-      order.emailSentAt = new Date();
-      await order.save();
-    } catch (emailError) {
-      console.error('Failed to send payment confirmation email:', emailError);
-    }
-  }
-
-  // Send admin notification after payment
-  try {
-    await sendAdminNotification(order);
-  } catch (emailError) {
-    console.error('Failed to send admin notification:', emailError);
-  }
-
-  res.json({
-    success: true,
-    message: 'Payment verified successfully',
-    payment
-  });
-});
-
-// @desc    Handle payment failure
-// @route   POST /api/payments/failed
-// @access  Private
-exports.handlePaymentFailure = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
-
-  const { orderId, razorpayOrderId, error } = req.body;
-
-  // Find order
-  const order = await Order.findById(orderId);
-  if (!order) {
-    throw new AppError(404, 'Order not found');
-  }
-
-  // Create or update payment record
-  const payment = await Payment.findOneAndUpdate(
-    { order: orderId },
-    {
-      order: orderId,
-      user: req.user._id,
-      amount: order.totalAmount,
-      paymentMethod: 'razorpay',
-      paymentStatus: 'failed',
-      razorpayDetails: {
-        orderId: razorpayOrderId
-      },
-      failureReason: error?.code || 'Payment failed'
-    },
-    { upsert: true, new: true }
-  );
-
-  // Update order payment status
-  order.paymentStatus = 'failed';
-  await order.save();
-
-  res.json({
-    success: true,
-    message: 'Payment failure recorded',
-    payment
-  });
-});
-
-// @desc    Initiate refund
-// @route   POST /api/payments/refund
-// @access  Private (Admin)
-exports.initiateRefund = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
-
-  const { paymentId, amount, reason } = req.body;
-
-  const payment = await Payment.findById(paymentId);
-
-  if (!payment) {
-    throw new AppError(404, 'Payment not found');
-  }
-
-  if (payment.paymentStatus !== 'completed') {
-    throw new AppError(400, 'Cannot refund a non-completed payment');
-  }
-
-  if (!payment.razorpayDetails.paymentId) {
-    throw new AppError(400, 'No Razorpay payment found');
-  }
-
-  try {
-    const refundAmount = amount || payment.amount;
-    const refundOptions = {
-      amount: refundAmount * 100, // Convert to paise
-      notes: {
-        reason: reason || 'Refund initiated'
-      }
-    };
-
-    const razorpayRefund = await razorpay.payments.refund(
-      payment.razorpayDetails.paymentId,
-      refundOptions
-    );
-
-    // Update payment record
-    payment.refundDetails = {
-      refundId: razorpayRefund.id,
-      amount: refundAmount,
-      status: 'processed',
-      refundedAt: new Date()
-    };
-
-    if (refundAmount === payment.amount) {
-      payment.paymentStatus = 'refunded';
-    } else {
-      payment.paymentStatus = 'partial_refund';
-    }
-
-    await payment.save();
-
-    // Update order if full refund
-    if (refundAmount === payment.amount) {
-      const order = await Order.findById(payment.order);
-      if (order) {
-        order.status = 'refunded';
-        await order.save();
-      }
+      await sendPaymentConfirmed(order);
+      // If admin notification wasn't sent on creation, send it now
+      // await sendAdminNotification(order); 
+    } catch (emailErr) {
+      console.error("Email Error:", emailErr);
     }
 
     res.json({
       success: true,
-      message: 'Refund initiated successfully',
-      refund: razorpayRefund
+      message: 'Payment verified successfully',
+      paymentId: payment._id
     });
-  } catch (error) {
-    throw new AppError(500, 'Failed to initiate refund');
+  } else {
+    // Log failure
+    await Payment.create({
+      order: order._id,
+      user: req.user._id,
+      amount: order.totalAmount,
+      paymentMethod: 'razorpay',
+      paymentStatus: 'failed',
+      failureReason: 'Invalid Signature',
+      razorpayDetails: {
+        orderId: razorpay_order_id,
+        paymentId: razorpay_payment_id,
+        signature: razorpay_signature
+      }
+    });
+
+    throw new AppError(400, 'Payment verification failed: Invalid Signature');
   }
 });
 
-// @desc    Get payment status
-// @route   GET /api/payments/status/:paymentId
-// @access  Private
-exports.getPaymentStatus = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
-
-  const orderId = req.params.orderId;
-  const paymentId = req.params.paymentId;
-
-  const payment = orderId
-    ? await Payment.findOne({ order: orderId })
-    : await Payment.findById(paymentId);
-
-  if (!payment) {
-    throw new AppError(404, 'Payment not found');
-  }
-
-  // Check if user owns the payment or is admin
-  if (payment.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-    throw new AppError(403, 'Not authorized to access this payment');
-  }
-
-  res.json({
-    success: true,
-    payment
-  });
-});
-
-// @desc    Get payment by order
-// @route   GET /api/payments/order/:orderId
-// @access  Private
-exports.getPaymentByOrder = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
-
-  const order = await Order.findById(req.params.orderId);
-
-  if (!order) {
-    throw new AppError(404, 'Order not found');
-  }
-
-  // Check if user owns the order or is admin
-  if (order.user.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-    throw new AppError(403, 'Not authorized to access this order');
-  }
-
-  const payment = await Payment.findOne({ order: req.params.orderId });
-
-  res.json({
-    success: true,
-    payment
-  });
-});
-
-// Aliases for route compatibility
-exports.initiateRazorpayPayment = exports.createRazorpayOrder;
-exports.verifyRazorpayPayment = exports.verifyPayment;
-
-// @desc    Initiate Cash on Delivery payment
+// @desc    Initiate Cash on Delivery
 // @route   POST /api/payments/cod
 // @access  Private
 exports.initiateCoD = asyncHandler(async (req, res) => {
   const { orderId } = req.body;
-
-  if (!orderId) {
-    throw new AppError(400, 'Order ID is required');
-  }
+  if (!orderId) throw new AppError(400, 'Order ID is required');
 
   const order = await Order.findById(orderId);
-  if (!order) {
-    throw new AppError(404, 'Order not found');
-  }
+  if (!order) throw new AppError(404, 'Order not found');
 
-  // Create payment record for COD
-  const payment = await Payment.create({
+  // Just record the intent, actual payment happens on delivery
+  await Payment.create({
     order: orderId,
     user: req.user._id,
     amount: order.totalAmount,
     paymentMethod: 'cod',
-    paymentStatus: 'pending',
-    transactionId: `COD_${Date.now()}_${orderId}`
+    paymentStatus: 'pending'
   });
 
-  // Update order payment status
-  order.paymentStatus = 'pending';
+  // Ensure order is confirmed
   order.status = 'confirmed';
   await order.save();
 
-  res.json({
-    success: true,
-    message: 'Cash on Delivery order confirmed',
-    payment
-  });
+  res.json({ success: true, message: 'Order Confirmed' });
+});
+
+exports.getPaymentStatus = asyncHandler(async (req, res) => {
+  const payment = await Payment.findOne({ order: req.params.orderId });
+  res.json({ success: true, payment });
 });

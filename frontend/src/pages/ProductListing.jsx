@@ -66,7 +66,7 @@ const ProductListing = () => {
         minPrice: filters.minPrice,
         maxPrice: filters.maxPrice,
         inStock: filters.inStock,
-        colors: filters.colors.join(','), // Send as comma separated string
+        variantColors: filters.colors.join(','), // Send as comma separated string
         sizes: filters.sizes.join(',')
       }
 

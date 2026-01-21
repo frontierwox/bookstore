@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Package, Truck, CheckCircle, XCircle, Clock, 
-  ChevronRight, ArrowRight, Calendar, ShoppingBag
+  ChevronRight, ArrowRight, Calendar, ShoppingBag, Loader2
 } from 'lucide-react'
 import { orderApi } from '../services/orders'
 
@@ -59,6 +59,20 @@ const OrderHistory = () => {
       default: 
         return { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', icon: <Clock size={14} /> }
     }
+  }
+
+  // --- Helper: Get Image URL Correctly ---
+  const getProductImage = (item) => {
+    // 1. Check direct image string (snapshot)
+    if (typeof item.image === 'string' && item.image.length > 0) return item.image;
+    
+    // 2. Check populated product images
+    const images = item.product?.images;
+    if (images && images.length > 0) {
+      if (images[0].imageId) return `/api/images/${images[0].imageId}`;
+      if (images[0].url) return images[0].url;
+    }
+    return '/placeholder.jpg';
   }
 
   const formatPrice = (price) => new Intl.NumberFormat('en-IN', {
@@ -137,7 +151,7 @@ const OrderHistory = () => {
                         <div className="flex justify-between items-start mb-5">
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-slate-900 text-lg tracking-tight">
+                              <span className="font-bold text-slate-900 text-lg tracking-tight font-mono">
                                 #{order.orderNumber || order._id.slice(-6).toUpperCase()}
                               </span>
                             </div>
@@ -158,12 +172,12 @@ const OrderHistory = () => {
                             {order.items.slice(0, 3).map((item, idx) => (
                               <div key={idx} className="relative w-16 h-20 rounded-lg bg-slate-50 border border-slate-100 overflow-hidden flex-shrink-0 group-hover:border-rose-100 transition-colors">
                                 <img 
-                                  src={item.image || item.product?.images?.[0]?.url} 
+                                  src={getProductImage(item)} 
                                   alt={item.name} 
                                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
-                                  onError={(e) => e.target.style.display = 'none'}
+                                  onError={(e) => e.target.src = '/placeholder.jpg'}
                                 />
-                                <div className="absolute bottom-0 right-0 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded-tl-md backdrop-blur-sm">
+                                <div className="absolute bottom-0 right-0 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded-tl-md backdrop-blur-sm font-medium">
                                   x{item.quantity}
                                 </div>
                               </div>
@@ -200,7 +214,7 @@ const OrderHistory = () => {
 
               {/* Pagination */}
               {orders.length >= 10 && (
-                <div className="flex justify-center items-center gap-4 mt-12 pb-8">
+                <div className="flex justify-center items-center gap-4 mt-10 pb-8">
                   <button
                     onClick={() => setPage(p => Math.max(1, p - 1))}
                     disabled={page === 1}
@@ -232,7 +246,7 @@ const OrderHistory = () => {
   )
 }
 
-// --- Sub-Components for cleanliness ---
+// --- Sub-Components ---
 
 const SkeletonCard = () => (
   <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 animate-pulse h-[240px] flex flex-col">

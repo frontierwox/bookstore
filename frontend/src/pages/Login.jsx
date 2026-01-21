@@ -1,7 +1,10 @@
 import React, { useState, useContext } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mail, Lock, User, ArrowRight, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { 
+  Mail, Lock, User, ArrowRight, Loader2, 
+  Eye, EyeOff, AlertCircle, Building2 
+} from 'lucide-react'
 import { AuthContext } from '../context/AuthContext'
 
 const Login = () => {
@@ -16,7 +19,6 @@ const Login = () => {
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
-    // Clear error when user starts typing again
     if (error) setError('')
   }
 
@@ -26,37 +28,44 @@ const Login = () => {
     setLoading(true)
 
     try {
-      // Simulate minimum loading time for better UX perception (optional)
-      // await new Promise(resolve => setTimeout(resolve, 800)) 
-      
       const result = await login(formData.email, formData.password)
 
       if (!result.success) {
         setError(result.error || 'Login failed. Please try again.')
-        setLoading(false) // Stop loading on manual error handling
+        setLoading(false)
         return
       }
 
+      // --- Smart Redirect Logic ---
       const role = result.user?.role
+      const from = location.state?.from?.pathname
+
+      // 1. If user was redirected from a protected page, send them back there
+      if (from) {
+        navigate(from, { replace: true })
+        return
+      }
+
+      // 2. Otherwise, route based on Role
       if (role === 'admin') {
         navigate('/admin/dashboard', { replace: true })
+      } else if (role === 'reseller') {
+        navigate('/reseller/dashboard', { replace: true })
       } else {
-        const from = location.state?.from?.pathname || '/'
-        navigate(from, { replace: true })
+        navigate('/', { replace: true })
       }
+
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please try again.')
-    } finally {
-      // Only stop loading if we haven't navigated away (though component unmount handles this usually)
-      if (error) setLoading(false)
+      setLoading(false)
     }
   }
 
   return (
     <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 relative overflow-hidden">
       
-      {/* Background Decorative Blobs - Subtle Luxury Feel */}
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-rose-200/30 rounded-full blur-3xl" />
+      {/* Background Decorative Blobs */}
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-rose-200/30 rounded-full blur-3xl animate-pulse" />
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-slate-200/30 rounded-full blur-3xl" />
 
       <motion.div 
@@ -67,7 +76,7 @@ const Login = () => {
       >
         {/* Header Section */}
         <div className="px-8 pt-10 pb-6 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-rose-50 text-rose-600 mb-6">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-rose-50 text-rose-600 mb-6 shadow-sm border border-rose-100">
             <User size={32} strokeWidth={1.5} />
           </div>
           <h1 className="text-3xl font-serif text-slate-900 mb-2">Welcome Back</h1>
@@ -75,7 +84,7 @@ const Login = () => {
         </div>
 
         {/* Form Section */}
-        <div className="px-8 pb-10">
+        <div className="px-8 pb-8">
           <AnimatePresence mode='wait'>
             {error && (
               <motion.div 
@@ -147,7 +156,7 @@ const Login = () => {
               </div>
             </div>
 
-            {/* Remember Me Checkbox */}
+            {/* Remember Me */}
             <div className="flex items-center">
               <input
                 type="checkbox"
@@ -177,14 +186,31 @@ const Login = () => {
           </form>
         </div>
 
-        {/* Footer */}
-        <div className="bg-slate-50 p-6 text-center border-t border-slate-100">
+        {/* Updated Footer with Reseller Link */}
+        <div className="bg-slate-50 p-6 text-center border-t border-slate-100 space-y-4">
           <p className="text-slate-600 text-sm">
             Don't have an account yet?{' '}
             <Link to="/register" className="font-semibold text-rose-600 hover:text-rose-800 transition-colors">
               Create Account
             </Link>
           </p>
+
+          {/* Business Separator */}
+          <div className="relative flex items-center py-1">
+            <div className="flex-grow border-t border-slate-200"></div>
+            <span className="flex-shrink-0 mx-4 text-slate-400 text-[10px] font-bold uppercase tracking-widest">Business</span>
+            <div className="flex-grow border-t border-slate-200"></div>
+          </div>
+
+          {/* Reseller Registration Link */}
+          <Link 
+            to="/reseller/register" 
+            className="flex items-center justify-center gap-2 text-sm font-medium text-slate-700 hover:text-rose-700 transition-colors group p-2 rounded-lg hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-100"
+          >
+            <Building2 size={16} className="text-slate-400 group-hover:text-rose-600 transition-colors"/>
+            <span>Partner / Reseller Registration</span>
+            <ArrowRight size={14} className="opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all duration-300" />
+          </Link>
         </div>
       </motion.div>
     </div>

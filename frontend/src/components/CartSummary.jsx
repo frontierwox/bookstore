@@ -1,265 +1,267 @@
-import React, { useState } from 'react'
+import React, { useState, useContext } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Tag, ShieldCheck, Truck, ChevronRight, Ticket, X, Loader2 } from 'lucide-react'
+import { 
+  ArrowRight, Tag, ShieldCheck, Truck, ChevronRight, 
+  Ticket, X, Loader2, Receipt, Info, Building2, Lock 
+} from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'react-hot-toast'
+import { AuthContext } from '../context/AuthContext'
 
 const CartSummary = ({ 
   cart, 
   onCheckout, 
   formatPrice, 
   onApplyCoupon, 
-  appliedCoupon, // Passed from parent (Cart)
-  onRemoveCoupon // Passed from parent (Cart)
+  appliedCoupon, 
+  onRemoveCoupon,
+  // Optional override if parent wants to force a specific shipping cost (e.g. promo)
+  shipping: forcedShippingProp 
 }) => {
-  // Use passed formatter or default
+  const { user } = useContext(AuthContext)
+  const isReseller = user?.role === 'reseller'
+
+  // --- Formatter ---
   const formatCurrency = formatPrice || ((price) => new Intl.NumberFormat('en-IN', {
     style: 'currency', currency: 'INR', maximumFractionDigits: 0
   }).format(price))
 
-  const FREE_SHIPPING_THRESHOLD = 999
-  const SHIPPING_COST = 50
-  const GST_RATE = 0.18
-
-  // --- Local State for Input ---
+  // --- Local State ---
   const [couponCode, setCouponCode] = useState('')
   const [couponLoading, setCouponLoading] = useState(false)
   const [isCouponExpanded, setIsCouponExpanded] = useState(false)
 
-  // --- Calculations ---
-  const subtotal = cart?.totalAmount || 0
-  
-  // Get applied discount from parent state
-  const discount = appliedCoupon?.discountAmount || 0
-  
-  // 1. Shipping Logic (based on original subtotal)
-  const isFreeShipping = subtotal >= FREE_SHIPPING_THRESHOLD
-  const shipping = isFreeShipping ? 0 : SHIPPING_COST
-  
-  // 2. Progress Bar Calculation
-  const progressPercent = Math.min((subtotal / FREE_SHIPPING_THRESHOLD) * 100, 100)
-  const amountNeeded = FREE_SHIPPING_THRESHOLD - subtotal
+  // --- CALCULATION LOGIC ---
+  // 1. Base values come strictly from the Backend Cart Object
+  const subtotal = cart?.subtotal || 0
+  const totalTax = cart?.totalTax || 0
+  const totalShipping = forcedShippingProp !== undefined 
+    ? forcedShippingProp 
+    : (cart?.totalShipping || 0)
 
-  // 3. Tax & Total (tax calculated on discounted amount)
-  const taxableAmount = Math.max(0, subtotal - discount)
-  const tax = Math.round(taxableAmount * GST_RATE * 100) / 100
+  // 2. Coupon Logic (Retail Only)
+  // If a coupon is applied in the UI, we subtract it from the Backend's Grand Total.
+  // Note: cart.totalAmount from backend = Subtotal + Tax + Shipping. It usually doesn't include the temporary coupon discount.
+  const backendGrandTotal = cart?.totalAmount || 0
+  const discountAmount = (!isReseller && appliedCoupon) ? (appliedCoupon.discountAmount || 0) : 0
   
-  const total = Math.round(subtotal - discount + shipping + tax)
+  // 3. Final Payable Amount
+  const finalTotal = Math.max(0, backendGrandTotal - discountAmount)
 
   // --- Handlers ---
   const handleApplyCoupon = async () => {
-    const trimmedCode = couponCode.trim()
+    if (isReseller) return 
     
+    const trimmedCode = couponCode.trim()
     if (!trimmedCode) {
       toast.error('Please enter a coupon code')
       return
     }
     
     setCouponLoading(true)
-    
     try {
-      // Call parent handler which validates with API
       await onApplyCoupon(trimmedCode)
-      // Success is handled in parent, which updates appliedCoupon
       toast.success(`Coupon ${trimmedCode} applied!`)
-      setCouponCode('') // Clear input on success
-      setIsCouponExpanded(false) // Collapse input
+      setCouponCode('') 
+      setIsCouponExpanded(false) 
     } catch (error) {
-      // Extract and show error message
-      const errorMessage = error.response?.data?.message || 
-                          error.message || 
-                          'Invalid or expired coupon code'
-      toast.error(errorMessage)
+      // Error is handled by parent or interceptor, but we catch here to stop loading state
+      console.error(error)
     } finally {
       setCouponLoading(false)
     }
   }
 
-  const handleRemoveCoupon = () => {
-    if (onRemoveCoupon) {
-      onRemoveCoupon()
-      setCouponCode('')
-      toast.success('Coupon removed')
-    }
-  }
-
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sticky top-24">
+    <div className={`rounded-2xl shadow-sm border p-5 md:p-6 ${
+      isReseller ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-100'
+    }`}>
+      
+      {/* --- Header --- */}
       <h3 className="font-serif text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-        Order Summary
+        {isReseller ? (
+          <>
+            <Building2 className="text-indigo-600" size={20}/>
+            Wholesale Summary
+          </>
+        ) : (
+          'Order Summary'
+        )}
       </h3>
 
       {/* --- Subtotal --- */}
       <div className="flex justify-between items-center mb-4 text-slate-600 text-sm">
-        <span>Subtotal ({cart?.totalItems || 0} items)</span>
+        <span>Subtotal ({cart?.totalItems || cart?.items?.length || 0} items)</span>
         <span className="font-medium text-slate-900">{formatCurrency(subtotal)}</span>
       </div>
 
-      {/* --- Free Shipping Progress --- */}
-      <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
-        <div className="flex justify-between items-center mb-2 text-sm">
-          <span className="font-semibold text-slate-700 flex items-center gap-2">
-            <Truck size={16} className="text-rose-600" />
-            {isFreeShipping ? 'Free Shipping Unlocked!' : 'Add items for Free Shipping'}
-          </span>
-          <span className="text-xs font-bold text-slate-500">
-            {progressPercent.toFixed(0)}%
-          </span>
-        </div>
-        
-        <div className="w-full bg-slate-200 rounded-full h-2 mb-2 overflow-hidden">
-          <motion.div 
-            initial={{ width: 0 }}
-            animate={{ width: `${progressPercent}%` }}
-            transition={{ duration: 1, ease: "easeOut" }}
-            className={`h-full rounded-full ${isFreeShipping ? 'bg-emerald-500' : 'bg-rose-500'}`}
-          />
-        </div>
-        
-        {!isFreeShipping && (
-          <p className="text-xs text-slate-500">
-            Add <span className="font-bold text-slate-900">{formatCurrency(amountNeeded)}</span> more to save {formatCurrency(SHIPPING_COST)} on shipping
-          </p>
-        )}
-      </div>
-
-      {/* --- Coupon Section --- */}
-      <div className="mb-6">
-        {appliedCoupon ? (
-          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex items-center justify-between">
-            <div className="flex items-center gap-3 overflow-hidden">
-              <div className="bg-emerald-100 p-1.5 rounded-full text-emerald-600 shrink-0">
-                <Ticket size={16} />
+      {/* --- Coupon Section (Hidden for Resellers) --- */}
+      {!isReseller && (
+        <div className="mb-6">
+          {appliedCoupon ? (
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <div className="bg-emerald-100 p-1.5 rounded-full text-emerald-600 shrink-0">
+                  <Ticket size={16} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-emerald-800 uppercase tracking-wide truncate">
+                    {appliedCoupon.code}
+                  </p>
+                  <p className="text-xs text-emerald-600">
+                    Saved {formatCurrency(appliedCoupon.discountAmount)}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-emerald-800 uppercase tracking-wide truncate">
-                  {appliedCoupon.code}
-                </p>
-                <p className="text-xs text-emerald-600">
-                  Saved {formatCurrency(appliedCoupon.discountAmount)}
-                </p>
-              </div>
+              <button 
+                onClick={onRemoveCoupon} 
+                className="text-emerald-400 hover:text-emerald-700 p-1 rounded-full hover:bg-emerald-100 transition-colors shrink-0"
+                title="Remove Coupon"
+              >
+                <X size={16} />
+              </button>
             </div>
-            <button 
-              onClick={handleRemoveCoupon} 
-              className="text-emerald-400 hover:text-emerald-700 p-1 rounded-full hover:bg-emerald-100 transition-colors shrink-0"
-              aria-label="Remove coupon"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        ) : (
-          <div className="border border-dashed border-slate-200 rounded-xl overflow-hidden">
-            <button 
-              onClick={() => setIsCouponExpanded(!isCouponExpanded)}
-              className="w-full flex items-center justify-between p-3 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-            >
-              <span className="flex items-center gap-2">
-                <Tag size={16} /> Have a coupon?
-              </span>
-              <ChevronRight 
-                size={16} 
-                className={`transition-transform duration-200 ${isCouponExpanded ? 'rotate-90' : ''}`}
-              />
-            </button>
-            
-            <AnimatePresence>
-              {isCouponExpanded && (
-                <motion.div 
-                  initial={{ height: 0 }} 
-                  animate={{ height: 'auto' }} 
-                  exit={{ height: 0 }}
-                  className="overflow-hidden"
-                >
-                  <div className="p-3 pt-0 flex gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="Enter code" 
-                      value={couponCode}
-                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                      onKeyPress={(e) => e.key === 'Enter' && handleApplyCoupon()}
-                      className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-rose-300 transition-colors uppercase placeholder:normal-case"
-                    />
-                    <button 
-                      onClick={handleApplyCoupon}
-                      disabled={couponLoading || !couponCode.trim()}
-                      className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-w-[70px] flex items-center justify-center"
-                    >
-                      {couponLoading ? (
-                        <Loader2 size={16} className="animate-spin"/>
-                      ) : (
-                        'Apply'
-                      )}
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
-      </div>
-
-      {/* --- Totals Divider --- */}
-      <div className="border-t border-slate-100 mb-4" />
+          ) : (
+            <div className="border border-dashed border-slate-200 rounded-xl overflow-hidden bg-white">
+              <button 
+                onClick={() => setIsCouponExpanded(!isCouponExpanded)}
+                className="w-full flex items-center justify-between p-3 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Tag size={16} /> Apply Coupon
+                </span>
+                <ChevronRight 
+                  size={16} 
+                  className={`transition-transform duration-200 ${isCouponExpanded ? 'rotate-90' : ''}`}
+                />
+              </button>
+              
+              <AnimatePresence>
+                {isCouponExpanded && (
+                  <motion.div 
+                    initial={{ height: 0 }} 
+                    animate={{ height: 'auto' }} 
+                    exit={{ height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="p-3 pt-0 flex gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="Enter code" 
+                        value={couponCode}
+                        onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                        onKeyDown={(e) => e.key === 'Enter' && handleApplyCoupon()}
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-rose-300 uppercase placeholder:normal-case w-full min-w-0"
+                      />
+                      <button 
+                        onClick={handleApplyCoupon}
+                        disabled={couponLoading || !couponCode.trim()}
+                        className="bg-slate-900 text-white px-3 rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-50 transition-colors min-w-[60px] flex items-center justify-center shrink-0"
+                      >
+                        {couponLoading ? <Loader2 size={16} className="animate-spin"/> : 'Add'}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* --- Detailed Breakdown --- */}
-      <div className="space-y-3 mb-6">
-        {discount > 0 && (
+      <div className="space-y-3 mb-6 bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+        {!isReseller && discountAmount > 0 && (
           <div className="flex justify-between items-center text-sm text-emerald-600 font-medium">
-            <span>Coupon Discount</span>
-            <span>-{formatCurrency(discount)}</span>
+            <span>Discount Applied</span>
+            <span>-{formatCurrency(discountAmount)}</span>
           </div>
         )}
         
+        {/* Shipping Line */}
         <div className="flex justify-between items-center text-sm text-slate-600">
-          <span>Shipping</span>
-          <span className={isFreeShipping ? "text-emerald-600 font-medium" : ""}>
-            {isFreeShipping ? 'Free' : formatCurrency(SHIPPING_COST)}
+          <div className="flex items-center gap-2">
+            <Truck size={14} className="text-slate-400"/>
+            <span>Shipping</span>
+            {isReseller && (
+              <div className="group relative">
+                 <Info size={12} className="text-slate-400 cursor-help" />
+                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-slate-800 text-white text-[10px] rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 text-center">
+                   Calculated based on weight & location.
+                 </div>
+              </div>
+            )}
+          </div>
+          <span className={totalShipping === 0 ? "text-emerald-600 font-medium" : "font-medium text-slate-900"}>
+            {totalShipping === 0 ? 'Free' : formatCurrency(totalShipping)}
           </span>
         </div>
 
+        {/* Tax Line */}
         <div className="flex justify-between items-center text-sm text-slate-600">
-          <span>Tax (GST 18%)</span>
-          <span>{formatCurrency(tax)}</span>
+          <div className="flex items-center gap-2">
+            <Receipt size={14} className="text-slate-400"/>
+            <span>{isReseller ? 'GST (Input Credit)' : 'Tax (GST)'}</span>
+          </div>
+          <span className="font-medium text-slate-900">{formatCurrency(totalTax)}</span>
         </div>
       </div>
 
-      <div className="border-t border-slate-100 mb-4" />
+      <div className="border-t border-slate-200 mb-4" />
 
       {/* --- Total --- */}
       <div className="flex justify-between items-end mb-8">
         <div>
           <span className="text-lg font-bold text-slate-900">Total Amount</span>
-          <p className="text-xs text-slate-400 mt-1">Including GST</p>
+          <p className="text-xs text-slate-400 mt-1">
+            {isReseller ? 'Total Investment (Inc. GST)' : 'Inclusive of all taxes'}
+          </p>
         </div>
         <div className="text-right">
-          <span className="text-3xl font-serif font-bold text-rose-600 block leading-none">
-            {formatCurrency(total)}
+          <span className={`text-2xl md:text-3xl font-serif font-bold block leading-none ${
+            isReseller ? 'text-indigo-700' : 'text-rose-600'
+          }`}>
+            {formatCurrency(finalTotal)}
           </span>
         </div>
       </div>
 
-      {/* --- Actions --- */}
+      {/* --- Checkout Button --- */}
       <button 
         onClick={onCheckout} 
-        className="w-full group relative overflow-hidden flex items-center justify-center gap-2 py-4 bg-slate-900 text-white rounded-xl font-bold text-lg hover:bg-rose-600 hover:shadow-lg hover:shadow-rose-500/30 transition-all duration-300 mb-4"
+        disabled={!cart?.items || cart.items.length === 0}
+        className={`w-full group relative overflow-hidden flex items-center justify-center gap-2 py-4 text-white rounded-xl font-bold text-lg hover:shadow-lg transition-all duration-300 mb-4 disabled:opacity-70 disabled:cursor-not-allowed ${
+          isReseller 
+            ? 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-500/30' 
+            : 'bg-slate-900 hover:bg-rose-600 hover:shadow-rose-500/30'
+        }`}
       >
         <span className="relative z-10 flex items-center gap-2">
-          Proceed to Checkout <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+          {isReseller ? 'Confirm Bulk Order' : 'Proceed to Checkout'} 
+          <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
         </span>
       </button>
 
       <Link 
-        to="/products" 
+        to={isReseller ? "/reseller/catalog" : "/products"} 
         className="block w-full text-center py-2 text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors"
       >
-        Continue Shopping
+        {isReseller ? 'Add More Stock' : 'Continue Shopping'}
       </Link>
 
       {/* --- Trust Badge --- */}
-      <div className="mt-6 flex items-center justify-center gap-2 text-[10px] uppercase tracking-wider font-bold text-slate-400 bg-slate-50 py-3 rounded-lg border border-slate-100">
-        <ShieldCheck size={14} className="text-emerald-500" />
-        Secure SSL Checkout
+      <div className="mt-6 flex items-center justify-center gap-2 text-[10px] uppercase tracking-wider font-bold text-slate-400 bg-white py-3 rounded-lg border border-slate-100">
+        {isReseller ? (
+           <>
+             <Lock size={14} className="text-indigo-500" />
+             B2B Secure Transaction
+           </>
+        ) : (
+           <>
+             <ShieldCheck size={14} className="text-emerald-500" />
+             Secure SSL Checkout
+           </>
+        )}
       </div>
 
     </div>

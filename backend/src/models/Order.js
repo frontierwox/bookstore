@@ -8,13 +8,7 @@ const orderSchema = new mongoose.Schema({
   },
   customerEmail: {
     type: String,
-    required: true,
-    validate: {
-      validator: function(v) {
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-      },
-      message: 'Invalid email format'
-    }
+    required: true
   },
   customerPhone: {
     type: String,
@@ -45,147 +39,73 @@ const orderSchema = new mongoose.Schema({
     selectedColor: String
   }],
   shippingAddress: {
-    name: {
-      type: String,
-      required: true
-    },
-    phone: {
-      type: String,
-      required: true
-    },
-    address: {
-      type: String,
-      required: true
-    },
-    city: {
-      type: String,
-      required: true
-    },
-    state: {
-      type: String,
-      required: true
-    },
-    pincode: {
-      type: String,
-      required: true
-    }
+    name: { type: String, required: true },
+    phone: { type: String, required: true },
+    address: { type: String, required: true },
+    city: { type: String, required: true },
+    state: { type: String, required: true },
+    pincode: { type: String, required: true }
   },
   paymentMethod: {
     type: String,
-    enum: ['cod', 'razorpay', 'card'],
-    required: true
+    enum: ['razorpay'], // ❌ COD Removed
+    required: true,
+    default: 'razorpay'
   },
   paymentStatus: {
     type: String,
     enum: ['pending', 'completed', 'failed', 'refunded'],
     default: 'pending'
   },
+  // ✅ Detailed Transaction Log
   paymentDetails: {
     razorpayOrderId: String,
     razorpayPaymentId: String,
     razorpaySignature: String,
-    transactionId: String
+    transactionId: String,
+    paymentDate: Date,
+    gatewayName: { type: String, default: 'Razorpay' }
   },
-  originalSubtotal: {
-    type: Number,
-    default: 0
-  },
-  subtotal: {
-    type: Number,
-    required: true
-  },
-  // --- EXISTING PRODUCT DISCOUNT FIELDS ---
-  discountApplied: {
-    type: Number,
-    default: 0
-  },
-  discount: {
-    type: Number,
-    default: 0
-  },
-  discountDetails: {
-    totalDiscount: {
-      type: Number,
-      default: 0
-    },
-    appliedDiscounts: [{
-      productId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Product'
-      },
-      productName: String,
-      originalPrice: Number,
-      discountPercentage: Number,
-      discountAmount: Number,
-      finalPrice: Number
-    }]
-  },
-  // --- NEW COUPON FIELDS ADDED HERE ---
-  couponDiscount: {
-    type: Number,
-    default: 0
-  },
+  subtotal: { type: Number, required: true },
+  discountApplied: { type: Number, default: 0 },
+  discount: { type: Number, default: 0 },
+  couponDiscount: { type: Number, default: 0 },
   couponDetails: {
     code: String,
     discountAmount: Number,
     percentage: Number
   },
-  // ------------------------------------
-  shippingCost: {
-    type: Number,
-    default: 0
-  },
-  tax: {
-    type: Number,
-    default: 0
-  },
-  totalAmount: {
-    type: Number,
-    required: true
-  },
+  shippingCost: { type: Number, default: 0 },
+  tax: { type: Number, default: 0 },
+  totalAmount: { type: Number, required: true },
   status: {
     type: String,
     enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'],
     default: 'pending'
   },
+  trackingDetails: {
+    courierName: String,
+    trackingId: String,
+    shippedDate: Date
+  },
   statusHistory: [{
     status: String,
-    timestamp: {
-      type: Date,
-      default: Date.now
-    },
+    timestamp: { type: Date, default: Date.now },
     note: String
   }],
-  emailSent: {
-    type: Boolean,
-    default: false
-  },
-  emailSentAt: Date,
   emailNotifications: {
-    confirmationSent: {
-      type: Boolean,
-      default: false
-    },
-    shippedSent: {
-      type: Boolean,
-      default: false
-    },
-    deliveredSent: {
-      type: Boolean,
-      default: false
-    },
+    confirmationSent: { type: Boolean, default: false },
+    shippedSent: { type: Boolean, default: false },
+    deliveredSent: { type: Boolean, default: false },
     confirmationSentAt: Date,
     shippedSentAt: Date,
     deliveredSentAt: Date
   },
-  estimatedDelivery: Date,
-  deliveredAt: Date,
-  notes: String
+  deliveredAt: Date
 }, {
   timestamps: true
 });
 
-// Generate order number before saving
 orderSchema.pre('save', async function(next) {
   if (this.isNew) {
     const timestamp = Date.now().toString(36).toUpperCase();

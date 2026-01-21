@@ -7,11 +7,14 @@ const formatProduct = (product) => {
   const discountActive = typeof product.isDiscountActive === 'function' ? product.isDiscountActive() : false;
   const obj = product.toObject({ virtuals: true });
 
-  // Always return live pricing; never trust stored discountedPrice (it can go stale)
   obj.discountActive = discountActive;
   obj.discountedPrice = discountActive ? product.finalPrice : null;
   obj.currentPrice = typeof product.getCurrentPrice === 'function' ? product.getCurrentPrice() : obj.price;
-
+  
+  obj.variants = obj.variants || []; 
+  
+  // Helper for UI: Is the product totally out of stock?
+  obj.isSoldOut = obj.stock <= 0;
   return obj;
 };
 
@@ -219,17 +222,20 @@ exports.createProduct = asyncHandler(async (req, res) => {
     throw new AppError(400, errors.array()[0].msg);
   }
 
+  const { removedImageIds, ...cleanBody } = req.body;
+
   const product = await Product.create({
-    ...req.body,
+    ...cleanBody,
     createdBy: req.user.id
   });
 
   res.status(201).json({
     success: true,
     message: 'Product created successfully',
-    product
+    product: formatProduct(product)
   });
 });
+
 
 // @desc    Update product
 // @route   PUT /api/products/:id
@@ -240,24 +246,44 @@ exports.updateProduct = asyncHandler(async (req, res) => {
     throw new AppError(400, errors.array()[0].msg);
   }
 
-  let product = await Product.findById(req.params.id);
-
+  const product = await Product.findById(req.params.id);
   if (!product) {
     throw new AppError(404, 'Product not found');
   }
 
-  product = await Product.findByIdAndUpdate(
-    req.params.id,
-    req.body,
-    { new: true, runValidators: true }
-  );
+  const {
+    removedImageIds,
+    images,
+    ...rest
+  } = req.body;
+
+  // 1️⃣ Remove deleted images
+  if (Array.isArray(removedImageIds) && removedImageIds.length > 0) {
+    product.images = product.images.filter(
+      img => !removedImageIds.includes(img.imageId.toString())
+    );
+  }
+
+  // 2️⃣ Replace images with finalImages from frontend
+  if (Array.isArray(images)) {
+    product.images = images;
+  }
+
+  // 3️⃣ Update remaining fields safely
+  Object.keys(rest).forEach(key => {
+    product[key] = rest[key];
+  });
+
+  // 4️⃣ Save ONCE (triggers hooks, stock calc, validation)
+  await product.save();
 
   res.json({
     success: true,
     message: 'Product updated successfully',
-    product
+    product: formatProduct(product)
   });
 });
+
 
 // @desc    Delete product
 // @route   DELETE /api/products/:id

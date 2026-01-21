@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
-  ResponsiveContainer, Cell, PieChart, Pie, Legend
+  ResponsiveContainer, Cell
 } from 'recharts';
 import { motion } from 'framer-motion';
 import { 
-  TrendingUp, ShoppingBag, DollarSign, Package, 
-  Calendar, Award, ArrowRight, Loader2, BarChart2 
+  TrendingUp, ShoppingBag, DollarSign, 
+  Calendar, Award, Loader2, BarChart2 
 } from 'lucide-react';
 import { adminApi } from '../services/admin';
 
@@ -15,27 +15,22 @@ const COLORS = ['#0f172a', '#334155', '#475569', '#64748b', '#94a3b8'];
 const ACCENT_COLOR = '#e11d48'; // Rose-600
 
 const Analytics = () => {
-  const [salesData, setSalesData] = useState(null);
-  const [productData, setProductData] = useState(null);
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState('month');
+  const [period, setPeriod] = useState('month'); // today, week, month, year, all
 
   useEffect(() => {
-    fetchAnalytics();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period]);
+    fetchData();
+  }, []);
 
-  const fetchAnalytics = async () => {
+  const fetchData = async () => {
     setLoading(true);
     try {
-      const [sales, products] = await Promise.all([
-        adminApi.getSalesAnalytics({ period }),
-        adminApi.getProductAnalytics()
-      ]);
-      setSalesData(sales.analytics);
-      setProductData(products.analytics);
+      // Fetch ALL orders to perform accurate client-side aggregation
+      const response = await adminApi.getOrders({ limit: 5000, sort: '-createdAt' });
+      setOrders(response.orders || []);
     } catch (error) {
-      console.error('Error fetching analytics:', error);
+      console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
@@ -44,34 +39,105 @@ const Analytics = () => {
   const formatPrice = (price) => 
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price || 0);
 
-  // --- Data Transformation ---
+  // --- 1. Filter Orders by Period ---
+  const periodOrders = useMemo(() => {
+    if (!orders.length) return [];
+    
+    const now = new Date();
+    const cutoff = new Date();
+    // End of today
+    now.setHours(23, 59, 59, 999);
 
-  // 1. Prepare Category Data for Chart
+    if (period === 'today') {
+      cutoff.setHours(0, 0, 0, 0);
+    } else if (period === 'week') {
+      cutoff.setDate(now.getDate() - 7);
+      cutoff.setHours(0, 0, 0, 0);
+    } else if (period === 'month') {
+      cutoff.setDate(1); 
+      cutoff.setHours(0, 0, 0, 0);
+    } else if (period === 'year') {
+      cutoff.setMonth(0, 1);
+      cutoff.setHours(0, 0, 0, 0);
+    } else if (period === 'all') {
+      return orders;
+    }
+
+    return orders.filter(o => new Date(o.createdAt) >= cutoff);
+  }, [orders, period]);
+
+  // --- 2. Calculate KPIs ---
+  const kpiData = useMemo(() => {
+    // Revenue based on Delivered orders only for accuracy
+    const deliveredOrders = periodOrders.filter(o => o.status === 'delivered');
+    
+    const totalRevenue = deliveredOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
+    const totalOrders = periodOrders.length; // Count all orders (placed)
+    const avgOrderValue = totalOrders > 0 ? totalRevenue / deliveredOrders.length : 0; // Avg value of completed orders
+
+    return { totalRevenue, totalOrders, avgOrderValue: avgOrderValue || 0 };
+  }, [periodOrders]);
+
+  // --- 3. Category Analytics ---
   const categoryChartData = useMemo(() => {
-    if (!salesData?.categorySales) return [];
-    // Convert object { "Silk": { count: 10, revenue: 5000 } } to Array
-    return Object.entries(salesData.categorySales)
-      .map(([name, data]) => ({ 
-        name, 
-        count: data.count, 
-        revenue: data.revenue || 0 
-      }))
-      .sort((a, b) => b.count - a.count) // Sort by volume
-      .slice(0, 8); // Top 8 categories
-  }, [salesData]);
+    const categories = {};
 
-  // 2. Prepare Top Products for Chart (Revenue view)
+    periodOrders.forEach(order => {
+      // Consider all valid orders for demand analysis, not just delivered
+      if (order.status === 'cancelled') return;
+
+      order.items.forEach(item => {
+        // Fallback for category if not populated, assume 'General' or try to parse
+        // Note: Ideally item.product.category is populated. 
+        // If your order.items stores category snapshot, use it. 
+        // Otherwise we might need to rely on what's available.
+        // Assuming item.product object exists from population:
+        const catName = item.product?.category || 'Uncategorized';
+        
+        if (!categories[catName]) {
+          categories[catName] = { name: catName, count: 0, revenue: 0 };
+        }
+        
+        categories[catName].count += item.quantity;
+        categories[catName].revenue += (item.price * item.quantity);
+      });
+    });
+
+    return Object.values(categories)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8); // Top 8
+  }, [periodOrders]);
+
+  // --- 4. Top Products Analytics ---
   const topProductsChartData = useMemo(() => {
-    if (!productData?.topSelling) return [];
-    return productData.topSelling
-      .slice(0, 5)
-      .map(p => ({
-        name: p.name.length > 15 ? p.name.substring(0, 15) + '...' : p.name,
-        full_name: p.name,
-        revenue: p.revenue,
-        sold: p.totalSold
-      }));
-  }, [productData]);
+    const products = {};
+
+    periodOrders.forEach(order => {
+      if (order.status === 'cancelled') return;
+
+      order.items.forEach(item => {
+        const pId = item.product?._id || item._id; // Unique Identifier
+        const pName = item.name;
+
+        if (!products[pId]) {
+          products[pId] = { 
+            name: pName.length > 20 ? pName.substring(0, 20) + '...' : pName,
+            full_name: pName,
+            category: item.product?.category || 'N/A',
+            revenue: 0, 
+            sold: 0 
+          };
+        }
+        
+        products[pId].sold += item.quantity;
+        products[pId].revenue += (item.price * item.quantity);
+      });
+    });
+
+    return Object.values(products)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5); // Top 5
+  }, [periodOrders]);
 
   if (loading) {
     return (
@@ -98,11 +164,11 @@ const Analytics = () => {
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
-                className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-all ${
+                className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-all capitalize ${
                   period === p 
                     ? 'bg-slate-900 text-white shadow-md' 
                     : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-                } capitalize`}
+                }`}
               >
                 {p === 'all' ? 'All Time' : p}
               </button>
@@ -114,23 +180,23 @@ const Analytics = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <StatCard 
             title="Total Revenue" 
-            value={formatPrice(salesData?.totalRevenue)} 
+            value={formatPrice(kpiData.totalRevenue)} 
             icon={<DollarSign size={22} />} 
-            label={`Generated this ${period}`}
+            label={`Delivered orders this ${period}`}
             color="emerald"
           />
           <StatCard 
             title="Orders Placed" 
-            value={salesData?.totalOrders || 0} 
+            value={kpiData.totalOrders} 
             icon={<ShoppingBag size={22} />} 
-            label={`Volume this ${period}`}
+            label={`Total volume this ${period}`}
             color="blue"
           />
           <StatCard 
             title="Avg. Order Value" 
-            value={formatPrice(salesData?.avgOrderValue)} 
+            value={formatPrice(kpiData.avgOrderValue)} 
             icon={<TrendingUp size={22} />} 
-            label="Revenue per order"
+            label="Revenue / Delivered Count"
             color="rose"
           />
         </div>
@@ -150,8 +216,8 @@ const Analytics = () => {
               <span className="text-xs font-medium bg-slate-100 text-slate-600 px-2 py-1 rounded">by Volume</span>
             </div>
             
-            {categoryChartData.length > 0 ? (
-              <div className="h-[320px] w-full">
+            <div className="h-[320px] w-full">
+              {categoryChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={categoryChartData} layout="vertical" margin={{ left: 10, right: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
@@ -160,14 +226,14 @@ const Analytics = () => {
                       dataKey="name" 
                       type="category" 
                       width={100} 
-                      tick={{fill: '#475569', fontSize: 13, fontWeight: 500}} 
+                      tick={{fill: '#475569', fontSize: 12, fontWeight: 500}} 
                       axisLine={false} 
                       tickLine={false} 
                     />
                     <RechartsTooltip 
                       cursor={{fill: '#f8fafc'}}
                       contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      formatter={(value, name) => [value, name === 'count' ? 'Units Sold' : 'Revenue']}
+                      formatter={(value, name) => [name === 'revenue' ? formatPrice(value) : value, name === 'count' ? 'Units Sold' : 'Revenue']}
                     />
                     <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={24}>
                       {categoryChartData.map((entry, index) => (
@@ -176,10 +242,10 @@ const Analytics = () => {
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
-            ) : (
-              <EmptyChartState />
-            )}
+              ) : (
+                <EmptyChartState />
+              )}
+            </div>
           </motion.div>
 
           {/* 2. Top Revenue Generators (Bar Chart) */}
@@ -194,8 +260,8 @@ const Analytics = () => {
               <span className="text-xs font-medium bg-emerald-50 text-emerald-700 px-2 py-1 rounded">₹ Revenue</span>
             </div>
 
-            {topProductsChartData.length > 0 ? (
-               <div className="h-[320px] w-full">
+            <div className="h-[320px] w-full">
+              {topProductsChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={topProductsChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -213,16 +279,16 @@ const Analytics = () => {
                       labelFormatter={(label, payload) => payload[0]?.payload.full_name || label}
                     />
                     <Bar dataKey="revenue" fill="#0f172a" radius={[4, 4, 0, 0]} barSize={32}>
-                       {topProductsChartData.map((entry, index) => (
+                        {topProductsChartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={index === 0 ? '#059669' : '#334155'} />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
-            ) : (
-              <EmptyChartState />
-            )}
+              ) : (
+                <EmptyChartState />
+              )}
+            </div>
           </motion.div>
         </div>
 
@@ -238,7 +304,7 @@ const Analytics = () => {
             <h2 className="text-lg font-bold text-slate-900">Best Selling Products</h2>
           </div>
 
-          {!productData?.topSelling || productData.topSelling.length === 0 ? (
+          {!topProductsChartData || topProductsChartData.length === 0 ? (
             <div className="p-12 text-center text-slate-500">No product sales data available for this period.</div>
           ) : (
             <div className="overflow-x-auto">
@@ -253,7 +319,7 @@ const Analytics = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {productData.topSelling.map((product, index) => (
+                  {topProductsChartData.map((product, index) => (
                     <tr key={index} className="hover:bg-slate-50/50 transition-colors group">
                       <td className="px-6 py-4">
                         <div className={`
@@ -267,7 +333,7 @@ const Analytics = () => {
                       </td>
                       <td className="px-6 py-4">
                         <span className="font-medium text-slate-900 group-hover:text-rose-600 transition-colors">
-                          {product.name}
+                          {product.full_name}
                         </span>
                       </td>
                       <td className="px-6 py-4">
@@ -276,7 +342,7 @@ const Analytics = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-center font-medium">
-                        {product.totalSold}
+                        {product.sold}
                       </td>
                       <td className="px-6 py-4 text-right font-bold text-slate-900">
                         {formatPrice(product.revenue)}

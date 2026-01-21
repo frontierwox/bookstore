@@ -3,7 +3,8 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   LayoutDashboard, ShoppingBag, BarChart2, ClipboardList, 
-  Package, LogOut, Menu, X, ChevronRight, Store, Ticket
+  Package, LogOut, Menu, X, ChevronRight, Store, Ticket,
+  Building2 // Added Building2 icon for Resellers
 } from 'lucide-react';
 import { AuthContext } from '../context/AuthContext';
 
@@ -24,11 +25,12 @@ const AdminLayout = () => {
     navigate('/login'); // Redirect to normal login if needed
   };
 
-  // Added 'Coupons' to the menu items
+  // Updated menu items to include 'Resellers'
   const menuItems = [
     { path: '/admin/dashboard', label: 'Overview', icon: LayoutDashboard },
     { path: '/admin/products', label: 'Products', icon: ShoppingBag },
     { path: '/admin/orders', label: 'Orders', icon: ClipboardList },
+    { path: '/admin/resellers', label: 'Resellers', icon: Building2 }, // New Resellers Item
     { path: '/admin/stock', label: 'Inventory', icon: Package },
     { path: '/admin/coupons', label: 'Coupons', icon: Ticket },
     { path: '/admin/analytics', label: 'Analytics', icon: BarChart2 }

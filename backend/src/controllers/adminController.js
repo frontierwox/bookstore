@@ -3,6 +3,8 @@ const Order = require('../models/Order');
 const Product = require('../models/Product');
 const { validationResult } = require('express-validator');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
+const getGFS = require('../config/gridfs');
+const { Readable } = require('stream');
 
 // @desc    Get dashboard statistics
 // @route   GET /api/admin/dashboard
@@ -94,6 +96,38 @@ exports.getAllUsers = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Upload Image to GridFS
+// @route   POST /api/admin/products/upload
+// @access  Private (Admin)
+exports.uploadImage = async (req, res) => {
+  // Using generic async/await here because stream events need manual handling
+  if (!req.file) {
+    return res.status(400).json({ message: 'No image uploaded' });
+  }
+
+  const gfs = getGFS();
+
+  // Create read stream from buffer (since we use memoryStorage)
+  const stream = Readable.from(req.file.buffer);
+
+  const uploadStream = gfs.openUploadStream(req.file.originalname, {
+    contentType: req.file.mimetype
+  });
+
+  stream.pipe(uploadStream);
+
+  uploadStream.on('error', (err) => {
+    return res.status(500).json({ success: false, message: 'Error uploading image' });
+  });
+
+  uploadStream.on('finish', () => {
+    res.json({
+      success: true,
+      imageId: uploadStream.id.toString()
+    });
+  });
+};
+
 // @desc    Get user details
 // @route   GET /api/admin/users/:userId
 // @access  Private (Admin)
@@ -169,22 +203,34 @@ exports.getAllOrders = asyncHandler(async (req, res) => {
 
   const query = {};
 
+  // 1. Role Filter (Retail vs Wholesale)
+  // We first find users matching the role, then filter orders by those users
+  if (req.query.role) {
+    const users = await User.find({ role: req.query.role }).select('_id');
+    const userIds = users.map(u => u._id);
+    query.user = { $in: userIds };
+  }
+
+  // 2. Status Filter
   if (req.query.status) {
     query.status = req.query.status;
   }
 
+  // 3. Date Range Filter
   if (req.query.dateFrom || req.query.dateTo) {
     query.createdAt = {};
     if (req.query.dateFrom) query.createdAt.$gte = new Date(req.query.dateFrom);
     if (req.query.dateTo) query.createdAt.$lte = new Date(req.query.dateTo);
   }
 
+  // 4. Search (Order Number)
   if (req.query.search) {
     query.orderNumber = { $regex: req.query.search, $options: 'i' };
   }
 
   const orders = await Order.find(query)
-    .populate('user', 'name email')
+    // ✅ POPULATE: Include 'role' and 'businessDetails' to differentiate in frontend
+    .populate('user', 'name email phone role businessDetails') 
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limit);
@@ -398,8 +444,6 @@ exports.exportOrders = asyncHandler(async (req, res) => {
     .populate('user', 'name email')
     .sort({ createdAt: -1 });
 
-  // In a real implementation, you would generate CSV/Excel files here
-  // For now, return the data
   res.json({
     success: true,
     message: `Orders exported in ${format} format`,
@@ -494,27 +538,7 @@ exports.bulkUpdateStock = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Upload product image
-// @route   POST /api/admin/products/upload
-// @access  Private (Admin)
-exports.uploadImage = asyncHandler(async (req, res) => {
-  if (!req.file) {
-    throw new AppError(400, 'No file uploaded');
-  }
-
-  const filePath = req.file.path;
-
-  // In a real implementation, you would:
-  // 1. Upload to cloud storage (S3, Cloudinary, etc.)
-  // 2. Return the uploaded file URL
-  
-  res.json({
-    success: true,
-    message: 'Image uploaded successfully',
-    filePath,
-    filename: req.file.filename
-  });
-});
+// --- REMOVED DUPLICATE uploadImage HERE ---
 
 // @desc    Get comprehensive analytics overview
 // @route   GET /api/admin/analytics/overview
@@ -1073,5 +1097,31 @@ exports.getRefundAnalytics = asyncHandler(async (req, res) => {
       refunded: byStatus.refunded || { count: 0, totalAmount: 0 }
     },
     breakdown: refundStats
+  });
+});
+
+// @desc    Get pending reseller requests
+exports.getPendingResellers = asyncHandler(async (req, res) => {
+  const pendingResellers = await User.find({ 
+    role: 'reseller', 
+    resellerStatus: 'pending' 
+  }).select('-password');
+  
+  res.json({ success: true, resellers: pendingResellers });
+});
+
+// @desc    Approve or Reject reseller
+exports.updateResellerStatus = asyncHandler(async (req, res) => {
+  const { status } = req.body; 
+  
+  const user = await User.findById(req.params.id);
+  if (!user) throw new AppError(404, 'User not found');
+
+  user.resellerStatus = status;
+  await user.save();
+
+  res.json({ 
+    success: true, 
+    message: `Reseller ${status} successfully` 
   });
 });

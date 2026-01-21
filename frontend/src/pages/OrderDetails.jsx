@@ -1,17 +1,23 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState, useContext } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { 
   ArrowLeft, MapPin, CreditCard, Package, Truck, 
   CheckCircle, Clock, Calendar, AlertCircle, Loader2, 
-  Copy, Phone, Mail, Ticket, ShieldCheck, Printer
+  Copy, Phone, Mail, Ticket, Building2, Receipt, 
+  FileText, Printer, ChevronRight
 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { orderApi } from '../services/orders'
+import { AuthContext } from '../context/AuthContext'
 
 const OrderDetails = () => {
   const { id } = useParams()
   const location = useLocation()
+  const { user } = useContext(AuthContext)
+  
+  // Role Detection
+  const isReseller = user?.role === 'reseller'
 
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -46,13 +52,37 @@ const OrderDetails = () => {
     maximumFractionDigits: 0
   }).format(price || 0)
 
+  // --- Helper: Get Image URL Correctly ---
+  const getProductImage = (item) => {
+  // 1. If order item has stored image
+  if (item.image) {
+    // If it's a MongoDB ObjectId → serve via API
+    if (/^[a-f\d]{24}$/i.test(item.image)) {
+      return `/api/images/${item.image}`;
+    }
+    // Otherwise assume it's a normal URL
+    return item.image;
+  }
+
+  // 2. Fallback to populated product images
+  const images = item.product?.images;
+  if (images && images.length > 0) {
+    if (images[0].imageId) return `/api/images/${images[0].imageId}`;
+    if (images[0].url) return images[0].url;
+  }
+
+  // 3. Final fallback
+  return '/placeholder.jpg';
+};
+
+
   const getStatusColor = (status) => {
     switch (status?.toLowerCase()) {
-      case 'delivered': return 'bg-emerald-50 text-emerald-700 border-emerald-200 ring-emerald-100'
-      case 'shipped': return 'bg-blue-50 text-blue-700 border-blue-200 ring-blue-100'
-      case 'cancelled': return 'bg-red-50 text-red-700 border-red-200 ring-red-100'
-      case 'processing': return 'bg-purple-50 text-purple-700 border-purple-200 ring-purple-100'
-      default: return 'bg-amber-50 text-amber-700 border-amber-200 ring-amber-100'
+      case 'delivered': return 'bg-emerald-100 text-emerald-700 border-emerald-200'
+      case 'shipped': return 'bg-indigo-100 text-indigo-700 border-indigo-200'
+      case 'cancelled': return 'bg-red-50 text-red-700 border-red-200'
+      case 'processing': return 'bg-blue-50 text-blue-700 border-blue-200'
+      default: return 'bg-amber-50 text-amber-700 border-amber-200'
     }
   }
 
@@ -60,7 +90,7 @@ const OrderDetails = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50">
-        <Loader2 className="w-10 h-10 text-rose-600 animate-spin mb-4" />
+        <Loader2 className={`w-10 h-10 animate-spin mb-4 ${isReseller ? 'text-indigo-600' : 'text-rose-600'}`} />
         <p className="text-slate-500 font-medium animate-pulse">Retrieving order details...</p>
       </div>
     )
@@ -85,7 +115,9 @@ const OrderDetails = () => {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50/50 py-6 px-4 md:px-8 font-sans print:bg-white print:p-0">
+    <div className={`min-h-screen py-12 md:py-16 px-4 md:px-8 font-sans print:bg-white print:p-0 ${
+      isReseller ? 'bg-slate-50' : 'bg-stone-50/50'
+    }`}>
       <div className="max-w-6xl mx-auto">
         
         {/* --- Header Section --- */}
@@ -93,7 +125,7 @@ const OrderDetails = () => {
           <div className="flex items-start gap-4">
             <Link 
               to="/orders" 
-              className="mt-1 w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-500 shadow-sm border border-slate-200 hover:text-rose-600 hover:border-rose-200 transition-all active:scale-95"
+              className="mt-1 w-10 h-10 bg-white rounded-xl flex items-center justify-center text-slate-500 shadow-sm border border-slate-200 hover:text-slate-900 transition-all active:scale-95"
             >
               <ArrowLeft size={20} />
             </Link>
@@ -101,18 +133,27 @@ const OrderDetails = () => {
             <div className="flex-1">
               <div className="flex flex-wrap items-center gap-3 mb-1">
                 <h1 className="text-2xl md:text-3xl font-serif font-bold text-slate-900">
-                  Order #{order.orderNumber || order._id.slice(-6).toUpperCase()}
+                  {isReseller ? 'Wholesale Order' : 'Order'} <span className="text-slate-400">#</span>
+                  {order.orderNumber || order._id.slice(-6).toUpperCase()}
                 </h1>
+                
                 <button 
                   onClick={copyOrderId}
-                  className="text-slate-400 hover:text-rose-600 transition-colors"
+                  className="text-slate-400 hover:text-slate-900 transition-colors"
                   title="Copy Order ID"
                 >
                   <Copy size={16} />
                 </button>
-                <span className={`text-xs px-3 py-1 rounded-full border font-bold uppercase tracking-wider ring-1 ring-inset ${getStatusColor(order.status)}`}>
+                
+                <span className={`text-xs px-3 py-1 rounded-full border font-bold uppercase tracking-wider ${getStatusColor(order.status)}`}>
                   {order.status}
                 </span>
+
+                {isReseller && (
+                  <span className="flex items-center gap-1 text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-1 rounded-full font-bold uppercase tracking-wide">
+                    <Building2 size={12} /> B2B
+                  </span>
+                )}
               </div>
               
               <div className="flex flex-wrap items-center text-slate-500 text-sm gap-x-4 gap-y-2">
@@ -134,22 +175,19 @@ const OrderDetails = () => {
               onClick={() => window.print()}
               className="hidden sm:flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 hover:text-slate-900 transition-all text-sm font-medium shadow-sm"
             >
-              <Printer size={18} /> Print Order
+              <Printer size={18} /> {isReseller ? 'Print Invoice' : 'Print Order'}
             </button>
 
-            {/* Order Success Banner (Animated) */}
+            {/* Success Banner */}
             {location.state?.success && (
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="bg-emerald-50 text-emerald-800 px-5 py-3 rounded-xl border border-emerald-100 flex items-center gap-3 shadow-sm"
+                className="bg-emerald-50 text-emerald-800 px-5 py-2.5 rounded-xl border border-emerald-100 flex items-center gap-3 shadow-sm"
               >
-                <div className="bg-emerald-100 p-1 rounded-full">
-                  <CheckCircle size={18} className="text-emerald-600" />
-                </div>
+                <CheckCircle size={18} className="text-emerald-600" />
                 <div>
-                  <p className="font-bold text-sm">Thank you!</p>
-                  <p className="text-xs text-emerald-600">Your order has been placed successfully.</p>
+                  <p className="font-bold text-sm">Order Placed!</p>
                 </div>
               </motion.div>
             )}
@@ -163,24 +201,25 @@ const OrderDetails = () => {
             
             {/* 1. Order Items */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden print:border print:shadow-none">
-              <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/30 flex justify-between items-center print:bg-slate-50">
+              <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center print:bg-slate-50">
                 <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                  <Package size={18} className="text-rose-600" /> Order Items
+                  <Package size={18} className={isReseller ? "text-indigo-600" : "text-rose-600"} /> 
+                  {isReseller ? 'Shipment Items' : 'Order Items'}
                 </h2>
-                <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+                <span className="text-xs font-medium text-slate-500 bg-white px-2.5 py-1 rounded-full border border-slate-200">
                   {order.items.length} {order.items.length === 1 ? 'Item' : 'Items'}
                 </span>
               </div>
               <div className="divide-y divide-slate-50">
                 {order.items.map((item, idx) => (
-                  <div key={idx} className="p-5 flex gap-4 hover:bg-slate-50/50 transition-colors">
+                  <div key={idx} className="p-5 flex gap-4 hover:bg-slate-50/30 transition-colors">
                     {/* Image */}
-                    <div className="w-20 h-28 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border border-slate-200">
+                    <div className="w-20 h-24 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border border-slate-100">
                       <img
-                        src={item.image || item.product?.images?.[0]?.url || item.product?.image}
+                        src={getProductImage(item)}
                         alt={item.name}
                         className="w-full h-full object-cover"
-                        onError={(e) => e.target.style.display = 'none'}
+                        onError={(e) => { e.target.src = '/placeholder.jpg'; }}
                       />
                     </div>
                     
@@ -188,10 +227,10 @@ const OrderDetails = () => {
                     <div className="flex-1 flex flex-col justify-between">
                       <div>
                         <div className="flex justify-between items-start gap-2">
-                          <h3 className="font-serif font-medium text-slate-900 line-clamp-2 leading-tight">
+                          <h3 className="font-serif font-medium text-slate-900 line-clamp-2 leading-tight text-sm md:text-base">
                             {item.name}
                           </h3>
-                          <p className="font-bold text-slate-900 whitespace-nowrap">
+                          <p className="font-bold text-slate-900 whitespace-nowrap text-sm md:text-base">
                             {formatPrice(item.price * item.quantity)}
                           </p>
                         </div>
@@ -212,11 +251,11 @@ const OrderDetails = () => {
                       
                       <div className="flex justify-between items-end mt-2">
                         <p className="text-xs text-slate-400">
-                          Qty: <span className="text-slate-600 font-medium">{item.quantity}</span>
+                          Qty: <span className="text-slate-700 font-bold bg-slate-100 px-1.5 py-0.5 rounded ml-1">{item.quantity}</span>
                         </p>
                         {item.quantity > 1 && (
                           <p className="text-xs text-slate-400">
-                            {formatPrice(item.price)} each
+                            {formatPrice(item.price)} / unit
                           </p>
                         )}
                       </div>
@@ -232,9 +271,10 @@ const OrderDetails = () => {
               {/* Shipping Address */}
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col h-full print:shadow-none print:border">
                 <h3 className="font-bold text-slate-900 mb-4 pb-3 border-b border-slate-50 flex items-center gap-2">
-                  <MapPin size={18} className="text-rose-600" /> Delivery Details
+                  <MapPin size={18} className={isReseller ? "text-indigo-600" : "text-rose-600"} /> 
+                  Delivery Details
                 </h3>
-                <div className="space-y-1.5 text-slate-600 text-sm flex-1">
+                <div className="space-y-1 text-slate-600 text-sm flex-1">
                   <p className="font-bold text-slate-900 text-base">{order.shippingAddress?.name}</p>
                   <p>{order.shippingAddress?.address}</p>
                   <p>{order.shippingAddress?.city}, {order.shippingAddress?.state}</p>
@@ -253,17 +293,18 @@ const OrderDetails = () => {
               {/* Payment Info */}
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col h-full print:shadow-none print:border">
                 <h3 className="font-bold text-slate-900 mb-4 pb-3 border-b border-slate-50 flex items-center gap-2">
-                  <CreditCard size={18} className="text-rose-600" /> Payment Info
+                  <CreditCard size={18} className={isReseller ? "text-indigo-600" : "text-rose-600"} /> 
+                  Payment Info
                 </h3>
                 <div className="space-y-5">
                   <div>
-                    <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Payment Method</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Payment Method</span>
                     <p className="font-medium text-slate-900 capitalize flex items-center gap-2 mt-1">
                       {order.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Online Payment'}
                     </p>
                   </div>
                   <div>
-                    <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Payment Status</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Payment Status</span>
                     <div className="mt-1">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold uppercase ${order.paymentStatus === 'paid' || order.paymentStatus === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
                           {(order.paymentStatus === 'paid' || order.paymentStatus === 'completed') && <CheckCircle size={12} />}
@@ -273,7 +314,7 @@ const OrderDetails = () => {
                   </div>
                   {order.paymentDetails?.transactionId && (
                     <div>
-                      <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Transaction ID</span>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Transaction ID</span>
                       <p className="text-xs font-mono bg-slate-50 p-2 rounded border border-slate-100 mt-1 break-all text-slate-600">
                         {order.paymentDetails.transactionId}
                       </p>
@@ -289,29 +330,34 @@ const OrderDetails = () => {
           <div className="space-y-6 print:mt-6">
             
             {/* 1. Order Summary */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print:shadow-none print:border">
-              <h3 className="font-serif font-bold text-lg text-slate-900 mb-5">Order Summary</h3>
+            <div className={`rounded-2xl shadow-sm border p-6 print:shadow-none print:border ${
+              isReseller ? 'bg-slate-50 border-slate-200' : 'bg-white border-slate-200'
+            }`}>
+              <h3 className="font-serif font-bold text-lg text-slate-900 mb-5 flex items-center gap-2">
+                {isReseller ? <FileText size={20} className="text-indigo-600"/> : null}
+                {isReseller ? 'Wholesale Summary' : 'Order Summary'}
+              </h3>
               
               <div className="space-y-3 text-sm">
                 
-                {/* Use originalSubtotal (MSRP) to allow discount logic to flow visually */}
+                {/* Subtotal */}
                 <div className="flex justify-between text-slate-600">
-                  <span>Subtotal</span>
+                  <span>{isReseller ? 'Wholesale Subtotal' : 'Subtotal'}</span>
                   <span className="font-medium text-slate-900">
                     {formatPrice(order.originalSubtotal || order.subtotal || order.totalAmount)}
                   </span>
                 </div>
                 
-                {/* Product Discounts (e.g. Sale Price) */}
-                {(order.discountApplied > 0 || order.discount > 0) && (
+                {/* Discounts */}
+                {(order.discountApplied > 0 || order.discount > 0) && !isReseller && (
                   <div className="flex justify-between text-emerald-600">
-                    <span>Product Disc.</span>
+                    <span>Discount</span>
                     <span>-{formatPrice(order.discountApplied || order.discount)}</span>
                   </div>
                 )}
 
-                {/* Coupon Discounts - Distinct Style */}
-                {order.couponDiscount > 0 && (
+                {/* Coupons */}
+                {order.couponDiscount > 0 && !isReseller && (
                   <div className="flex justify-between text-rose-600 bg-rose-50/50 px-2 py-1 rounded -mx-2">
                     <span className="flex items-center gap-1.5">
                       <Ticket size={14} />
@@ -323,47 +369,76 @@ const OrderDetails = () => {
 
                 {/* Shipping */}
                 <div className="flex justify-between text-slate-600">
-                  <span>Shipping</span>
-                  <span>{order.shippingCost === 0 ? 'Free' : formatPrice(order.shippingCost)}</span>
+                  <span>{isReseller ? 'Shipping (Bulk)' : 'Shipping'}</span>
+                  <span>{order.shippingCost === 0 ? <span className="text-emerald-600 font-medium">Free</span> : formatPrice(order.shippingCost)}</span>
                 </div>
 
                 {/* Tax */}
                 <div className="flex justify-between text-slate-600">
-                  <span>GST (18%)</span>
+                  <div className="flex items-center gap-1">
+                    <span>{isReseller ? 'GST (Input Credit)' : 'Tax (GST)'}</span>
+                    {isReseller && <Receipt size={12} className="text-slate-400"/>}
+                  </div>
                   <span>{formatPrice(order.tax)}</span>
                 </div>
 
-                <div className="border-t border-dashed border-slate-200 my-3"></div>
+                <div className="border-t border-dashed border-slate-300 my-3"></div>
 
                 <div className="flex justify-between items-center">
                   <span className="font-bold text-slate-900 text-base">Grand Total</span>
-                  <span className="text-xl font-serif font-bold text-rose-600">
+                  <span className={`text-xl font-serif font-bold ${isReseller ? 'text-indigo-700' : 'text-rose-600'}`}>
                     {formatPrice(order.totalAmount)}
                   </span>
                 </div>
+                
+                {isReseller && (
+                  <p className="text-[10px] text-center text-slate-400 mt-2">
+                    * Invoice valid for Input Tax Credit claims.
+                  </p>
+                )}
               </div>
             </div>
 
-            {/* 2. Tracking Timeline (Hidden in Print usually, but kept for context) */}
+            {/* 2. Tracking Timeline */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print:hidden">
-              <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
-                <Truck size={18} className="text-rose-600" /> Tracking Status
+              <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <Truck size={18} className={isReseller ? "text-indigo-600" : "text-rose-600"} /> 
+                Tracking Status
               </h3>
+
+              {/* ✅ NEW: Tracking Details Box */}
+              {order.trackingDetails && (order.status === 'shipped' || order.status === 'delivered') && (
+                <div className={`mb-6 p-4 rounded-xl border ${isReseller ? 'bg-indigo-50 border-indigo-100' : 'bg-blue-50 border-blue-100'}`}>
+                  <h4 className={`font-bold text-xs uppercase tracking-wider mb-3 ${isReseller ? 'text-indigo-800' : 'text-blue-800'}`}>
+                    Shipment Details
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[10px] text-slate-500 uppercase font-bold">Courier</p>
+                      <p className="text-sm font-medium text-slate-900">{order.trackingDetails.courierName || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 uppercase font-bold">Tracking ID</p>
+                      <p className="text-sm font-mono font-medium text-slate-900 tracking-wide">{order.trackingDetails.trackingId || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
               
               {order.statusHistory?.length > 0 ? (
                 <div className="relative pl-2">
-                  {/* Vertical Connector Line */}
                   <div className="absolute top-2 left-[7px] bottom-6 w-0.5 bg-slate-100" />
                   
                   <div className="space-y-8">
-                    {/* Reverse history so latest is on top */}
                     {[...order.statusHistory].reverse().map((history, idx) => (
                       <div key={idx} className="relative pl-8 group">
-                        {/* Dot */}
                         <div className={`absolute left-0 top-1.5 w-4 h-4 rounded-full border-[3px] z-10 bg-white
-                          ${idx === 0 ? 'border-rose-500 shadow-[0_0_0_2px_rgba(225,29,72,0.1)]' : 'border-slate-300'}`} 
+                          ${idx === 0 
+                            ? isReseller 
+                              ? 'border-indigo-500 shadow-[0_0_0_2px_rgba(99,102,241,0.2)]' 
+                              : 'border-rose-500 shadow-[0_0_0_2px_rgba(225,29,72,0.1)]'
+                            : 'border-slate-300'}`} 
                         />
-                        
                         <div>
                           <p className={`font-bold text-sm capitalize ${idx === 0 ? 'text-slate-900' : 'text-slate-500'}`}>
                             {history.status}
@@ -393,8 +468,11 @@ const OrderDetails = () => {
             {/* Need Help? */}
             <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 text-center print:hidden">
               <p className="text-sm text-slate-600 mb-2">Need help with this order?</p>
-              <Link to="/contact" className="text-sm font-bold text-rose-600 hover:text-rose-700 hover:underline">
-                Contact Support
+              <Link 
+                to="/contact" 
+                className={`text-sm font-bold hover:underline ${isReseller ? 'text-indigo-600 hover:text-indigo-700' : 'text-rose-600 hover:text-rose-700'}`}
+              >
+                {isReseller ? 'Contact B2B Support' : 'Contact Support'}
               </Link>
             </div>
 

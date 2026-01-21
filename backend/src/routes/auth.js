@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { register, login, getProfile, updateProfile, logout } = require('../controllers/authController');
+const { register, login, getProfile, updateProfile, logout ,registerReseller} = require('../controllers/authController');
 const { verifyToken } = require('../middleware/auth');
 const { validateEmail, validatePassword } = require('../middleware/validation');
 
@@ -13,5 +13,6 @@ router.post('/logout', logout);
 router.get('/me', verifyToken, getProfile); // Alias for frontend compatibility
 router.get('/profile', verifyToken, getProfile);
 router.put('/profile', verifyToken, updateProfile);
+router.post('/register-reseller', registerReseller);
 
 module.exports = router;

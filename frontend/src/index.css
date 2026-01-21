@@ -1,3 +1,32 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background: white !important;
+  }
+
+  /* Prevent page breaks inside cards */
+  .print-avoid-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Remove shadows & rounding */
+  * {
+    box-shadow: none !important;
+  }
+
+  /* Hide browser header/footer */
+  header, footer {
+    display: none !important;
+  }
+}

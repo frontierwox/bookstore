@@ -10,6 +10,12 @@ export const login = async (credentials) => {
   return response.data;
 };
 
+// --- FIX: Removed '/api' prefix here ---
+export const registerReseller = async (resellerData) => {
+  const response = await api.post('/auth/register-reseller', resellerData);
+  return response.data;
+};
+
 export const getCurrentUser = async () => {
   const response = await api.get('/auth/me');
   return response.data;
@@ -29,7 +35,8 @@ export const authApi = {
   login,
   logout,
   getCurrentUser,
-  updateProfile
+  updateProfile,
+  registerReseller
 };
 
 export default authApi;

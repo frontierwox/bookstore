@@ -1,3 +1,4 @@
+// models/Cart.js
 const mongoose = require('mongoose');
 
 const cartSchema = new mongoose.Schema({
@@ -19,40 +20,25 @@ const cartSchema = new mongoose.Schema({
       min: [1, 'Quantity must be at least 1'],
       default: 1
     },
-    price: {
+    price: { // Unit price (after discounts/wholesale logic)
       type: Number,
       required: true
     },
-    selectedSize: {
-      type: String
-    },
-    selectedColor: {
-      type: String
-    }
+    // Cache these for display speed, but recalculate on updates
+    taxAmount: { type: Number, default: 0 },
+    shippingAmount: { type: Number, default: 0 },
+    
+    selectedSize: String,
+    selectedColor: String
   }],
-  totalAmount: {
-    type: Number,
-    default: 0
-  },
-  totalItems: {
-    type: Number,
-    default: 0
-  }
+  // Summary Fields
+  subtotal: { type: Number, default: 0 },     // Sum of price * qty
+  totalShipping: { type: Number, default: 0 }, // Sum of all item shipping
+  totalTax: { type: Number, default: 0 },      // Sum of all item tax
+  totalAmount: { type: Number, default: 0 },   // Grand Total
+  totalItems: { type: Number, default: 0 }
 }, {
   timestamps: true
-});
-
-// Calculate total before saving
-cartSchema.pre('save', function(next) {
-  this.totalAmount = this.items.reduce((total, item) => {
-    return total + (item.price * item.quantity);
-  }, 0);
-  
-  this.totalItems = this.items.reduce((total, item) => {
-    return total + item.quantity;
-  }, 0);
-  
-  next();
 });
 
 module.exports = mongoose.model('Cart', cartSchema);

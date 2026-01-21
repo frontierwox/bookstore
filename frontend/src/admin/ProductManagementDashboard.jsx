@@ -2,9 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Plus, Search, Filter, Edit, Trash2, Tag, 
-  TrendingUp, TrendingDown, Package, AlertTriangle, 
-  MoreHorizontal, ChevronLeft, ChevronRight, X, 
-  Save, Calendar, IndianRupee, Percent, CheckCircle, Loader2 
+  TrendingDown, Package, AlertTriangle, 
+  ChevronLeft, ChevronRight, X, Percent, Loader2 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
@@ -57,7 +56,7 @@ const ProductManagementDashboard = () => {
     try {
       const params = {
         page: currentPage,
-        limit: 10, // 10 items per page fits better on admin dashboards
+        limit: 10,
         search: debouncedSearch,
         category: filterCategory,
         hasDiscount: filterDiscount === 'yes' ? true : filterDiscount === 'no' ? false : undefined
@@ -330,13 +329,20 @@ const ProductRow = ({ product, formatPrice, onDelete, onEditDiscount }) => {
 
   const stockStatus = getStockStatus(product.stock);
 
+  // LOGIC FIX: Determine Image Source
+  const imageSource = product.images?.[0]?.imageId 
+    ? `/api/images/${product.images[0].imageId}` 
+    : product.images?.[0]?.url 
+    ? product.images[0].url 
+    : null;
+
   return (
     <tr className="hover:bg-slate-50/50 transition-colors group">
       <td className="px-6 py-4">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0 border border-slate-200">
-            {product.images?.[0]?.url ? (
-              <img src={product.images[0].url} alt={product.name} className="w-full h-full object-cover" />
+            {imageSource ? (
+              <img src={imageSource} alt={product.name} className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-slate-300"><Package size={20} /></div>
             )}
@@ -415,6 +421,11 @@ const DiscountModal = ({ product, onClose, onSave, formatPrice }) => {
 
   const finalPrice = product.price - (product.price * percent / 100);
 
+  // Helper for image preview in modal
+  const imageSource = product.images?.[0]?.imageId 
+    ? `/api/images/${product.images[0].imageId}` 
+    : product.images?.[0]?.url;
+
   const handleSubmit = (e) => {
     e.preventDefault();
     onSave(product._id, {
@@ -447,8 +458,8 @@ const DiscountModal = ({ product, onClose, onSave, formatPrice }) => {
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-100">
-            {product.images?.[0]?.url && (
-              <img src={product.images[0].url} alt="" className="w-12 h-12 rounded-lg object-cover" />
+            {imageSource && (
+              <img src={imageSource} alt="" className="w-12 h-12 rounded-lg object-cover" />
             )}
             <div>
               <p className="text-sm font-semibold text-slate-900 line-clamp-1">{product.name}</p>

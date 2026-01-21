@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { 
   Search, Filter, Eye, ChevronLeft, ChevronRight, 
   Download, RefreshCw, Calendar, CreditCard, 
-  CheckCircle, Clock, Truck, AlertTriangle, X 
+  CheckCircle, Clock, Truck, AlertTriangle, 
+  Building2, User, Package, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
@@ -11,7 +12,7 @@ import { adminApi } from '../services/admin';
 
 // --- Configuration ---
 const TABS = [
-  { id: 'all', label: 'All Orders' },
+  { id: 'all', label: 'All' },
   { id: 'pending', label: 'Pending' },
   { id: 'processing', label: 'Processing' },
   { id: 'shipped', label: 'Shipped' },
@@ -36,18 +37,25 @@ const OrderManagement = () => {
   const [refreshing, setRefreshing] = useState(false);
   
   // Filters
+  const [orderType, setOrderType] = useState('retail'); // 'retail' | 'wholesale'
   const [activeTab, setActiveTab] = useState('all');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  // Confirmation Modal State
+  // ✅ MODAL STATE
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     orderId: null,
     newStatus: '',
     currentStatus: ''
+  });
+  
+  // ✅ TRACKING INFO STATE
+  const [trackingData, setTrackingData] = useState({
+    courierName: '',
+    trackingId: ''
   });
 
   // --- Debounce Search ---
@@ -63,11 +71,13 @@ const OrderManagement = () => {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
+      
       const params = {
         page,
         limit: 10,
         search: debouncedSearch,
-        status: activeTab === 'all' ? undefined : activeTab
+        status: activeTab === 'all' ? undefined : activeTab,
+        role: orderType === 'wholesale' ? 'reseller' : 'user' 
       };
 
       const data = await adminApi.getOrders(params);
@@ -76,13 +86,10 @@ const OrderManagement = () => {
       setOrders(allOrders);
       setTotalPages(Math.ceil((data.total || 0) / 10));
       
-      // --- UPDATED STATS LOGIC ---
-      // Revenue: Only 'delivered' orders
       const completedRevenue = allOrders
         .filter(o => o.status === 'delivered')
         .reduce((acc, curr) => acc + curr.totalAmount, 0);
 
-      // Pending Action: Active orders (Not delivered, Not cancelled)
       const pendingCount = allOrders
         .filter(o => o.status !== 'delivered' && o.status !== 'cancelled')
         .length;
@@ -100,7 +107,7 @@ const OrderManagement = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [page, debouncedSearch, activeTab]);
+  }, [page, debouncedSearch, activeTab, orderType]);
 
   useEffect(() => {
     fetchData();
@@ -111,12 +118,12 @@ const OrderManagement = () => {
     fetchData();
   };
 
-  // --- Actions ---
-  
-  // 1. Trigger Modal
+  // --- Status Update Actions ---
   const requestStatusUpdate = (orderId, currentStatus, newStatus) => {
-    // Prevent redundant updates
     if (currentStatus === newStatus) return;
+    
+    // Reset tracking data when opening modal
+    setTrackingData({ courierName: '', trackingId: '' });
     
     setConfirmModal({
       isOpen: true,
@@ -126,21 +133,37 @@ const OrderManagement = () => {
     });
   };
 
-  // 2. Confirm & Execute Update
   const executeStatusUpdate = async () => {
     const { orderId, newStatus } = confirmModal;
     if (!orderId) return;
 
+    // Validate if status is 'shipped' - Works for BOTH Retail and Wholesale
+    if (newStatus === 'shipped') {
+      if (!trackingData.courierName.trim()) {
+        toast.error('Please enter Courier Name');
+        return;
+      }
+      if (!trackingData.trackingId.trim()) {
+        toast.error('Please enter Tracking ID');
+        return;
+      }
+    }
+
     const toastId = toast.loading('Updating status...');
     try {
-      await adminApi.updateOrderStatus(orderId, { status: newStatus });
-      
-      // Optimistic update
-      setOrders(prev => prev.map(o => o._id === orderId ? { ...o, status: newStatus } : o));
-      
-      // Re-fetch to update stats correctly if status changed to/from delivered/cancelled
-      fetchData(); 
+      const payload = { 
+        status: newStatus,
+        // Only send tracking info if status is shipped
+        ...(newStatus === 'shipped' && {
+          courierName: trackingData.courierName,
+          trackingId: trackingData.trackingId
+        })
+      };
 
+      await adminApi.updateOrderStatus(orderId, payload);
+      
+      setOrders(prev => prev.map(o => o._id === orderId ? { ...o, status: newStatus } : o));
+      fetchData(); 
       toast.success(`Order marked as ${newStatus}`, { id: toastId });
       setConfirmModal({ isOpen: false, orderId: null, newStatus: '', currentStatus: '' });
     } catch (error) {
@@ -148,7 +171,6 @@ const OrderManagement = () => {
     }
   };
 
-  // --- Helpers ---
   const formatPrice = (price) => 
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price);
 
@@ -173,15 +195,38 @@ const OrderManagement = () => {
             >
               <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
             </button>
-            <button className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-all shadow-md hover:shadow-lg font-medium text-sm">
-              <Download size={18} /> Export CSV
+          </div>
+        </div>
+
+        {/* --- Market View Toggle --- */}
+        <div className="mb-6 flex justify-center">
+          <div className="bg-white p-1 rounded-xl border border-slate-200 shadow-sm inline-flex">
+            <button
+              onClick={() => { setOrderType('retail'); setPage(1); }}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
+                orderType === 'retail' 
+                  ? 'bg-rose-50 text-rose-600 shadow-sm' 
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <User size={18} /> Retail Orders
+            </button>
+            <button
+              onClick={() => { setOrderType('wholesale'); setPage(1); }}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${
+                orderType === 'wholesale' 
+                  ? 'bg-indigo-50 text-indigo-600 shadow-sm' 
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Building2 size={18} /> Wholesale Orders
             </button>
           </div>
         </div>
 
         {/* --- Stats Overview --- */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-          <StatCard label="Total Orders" value={stats.total} icon={<CheckCircle size={22} />} color="blue" />
+          <StatCard label="Total Orders" value={stats.total} icon={<CheckCircle size={22} />} color={orderType === 'wholesale' ? 'indigo' : 'blue'} />
           <StatCard label="Pending Action" value={stats.pendingAction} icon={<Clock size={22} />} color="amber" />
           <StatCard label="Completed Revenue" value={formatPrice(stats.revenue)} icon={<CreditCard size={22} />} color="emerald" />
         </div>
@@ -189,8 +234,8 @@ const OrderManagement = () => {
         {/* --- Controls Section --- */}
         <div className="bg-white rounded-t-2xl border border-slate-200 border-b-0 flex flex-col lg:flex-row items-center justify-between gap-4 p-4">
           
-          {/* Tabs */}
-          <div className="flex gap-1 overflow-x-auto pb-2 lg:pb-0 w-full lg:w-auto no-scrollbar mask-gradient">
+          {/* Status Tabs */}
+          <div className="flex gap-1 overflow-x-auto pb-2 lg:pb-0 w-full lg:w-auto no-scrollbar">
             {TABS.map(tab => (
               <button
                 key={tab.id}
@@ -198,7 +243,7 @@ const OrderManagement = () => {
                 className={`
                   px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all duration-200
                   ${activeTab === tab.id 
-                    ? 'bg-slate-100 text-slate-900 font-semibold' 
+                    ? 'bg-slate-100 text-slate-900 font-semibold ring-1 ring-slate-200' 
                     : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}
                 `}
               >
@@ -212,7 +257,7 @@ const OrderManagement = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-rose-500 transition-colors" size={18} />
             <input 
               type="text" 
-              placeholder="Search order ID, customer..." 
+              placeholder={orderType === 'wholesale' ? "Search business, GST, order ID..." : "Search customer, email, order ID..."}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none transition-all text-sm placeholder:text-slate-400"
@@ -229,7 +274,7 @@ const OrderManagement = () => {
               <div className="bg-slate-50 p-4 rounded-full mb-4">
                 <Filter size={32} className="opacity-50" />
               </div>
-              <p className="text-lg font-medium text-slate-600">No orders found</p>
+              <p className="text-lg font-medium text-slate-600">No {orderType} orders found</p>
               <p className="text-sm">Try changing filters or search terms</p>
             </div>
           ) : (
@@ -239,10 +284,17 @@ const OrderManagement = () => {
                   <tr>
                     <th className="px-6 py-4 whitespace-nowrap">Order ID</th>
                     <th className="px-6 py-4 whitespace-nowrap">Date</th>
-                    <th className="px-6 py-4 whitespace-nowrap">Customer</th>
+                    
+                    {/* DYNAMIC HEADER BASED ON VIEW */}
+                    {orderType === 'wholesale' ? (
+                      <th className="px-6 py-4 whitespace-nowrap">Business Profile</th>
+                    ) : (
+                      <th className="px-6 py-4 whitespace-nowrap">Customer</th>
+                    )}
+
                     <th className="px-6 py-4 whitespace-nowrap">Total</th>
                     <th className="px-6 py-4 whitespace-nowrap">Payment</th>
-                    <th className="px-6 py-4 whitespace-nowrap">Status</th>
+                    <th className="px-8 py-4 whitespace-nowrap">Status</th>
                     <th className="px-6 py-4 whitespace-nowrap text-right">Action</th>
                   </tr>
                 </thead>
@@ -252,6 +304,7 @@ const OrderManagement = () => {
                       <OrderRow 
                         key={order._id} 
                         order={order} 
+                        type={orderType}
                         formatDate={formatDate}
                         formatPrice={formatPrice}
                         onRequestUpdate={requestStatusUpdate}
@@ -290,46 +343,72 @@ const OrderManagement = () => {
         </div>
       </div>
 
-      {/* --- Confirmation Modal --- */}
+      {/* ✅ CONFIRMATION MODAL WITH COURIER INPUTS */}
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden"
+            initial={{ opacity: 0, scale: 0.95 }} 
+            animate={{ opacity: 1, scale: 1 }} 
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden border border-slate-200"
           >
             <div className="p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="p-3 bg-amber-100 text-amber-600 rounded-full">
-                  <AlertTriangle size={24} />
+              
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
+                  <div className={`p-3 rounded-full ${confirmModal.newStatus === 'shipped' ? 'bg-indigo-100 text-indigo-600' : 'bg-amber-100 text-amber-600'}`}>
+                    {confirmModal.newStatus === 'shipped' ? <Truck size={24}/> : <AlertTriangle size={24} />}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">
+                      {confirmModal.newStatus === 'shipped' ? 'Shipment Details' : 'Confirm Update?'}
+                    </h3>
+                    <p className="text-sm text-slate-500">
+                      Changing status to <span className="font-semibold text-rose-600 uppercase">{confirmModal.newStatus}</span>
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">Update Order Status?</h3>
-                  <p className="text-sm text-slate-500">This action will notify the customer.</p>
-                </div>
+                <button onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })} className="p-1 hover:bg-slate-100 rounded-full transition-colors text-slate-400">
+                  <X size={20} />
+                </button>
               </div>
               
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-6 text-sm">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-slate-500">Current Status:</span>
-                  <span className="font-semibold uppercase text-slate-700">{confirmModal.currentStatus}</span>
+              {/* ✅ COURIER INPUTS (Visible for ALL orders if status is 'shipped') */}
+              {confirmModal.newStatus === 'shipped' && (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 space-y-3">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Tracking Information</p>
+                  <div>
+                    <input 
+                      type="text"
+                      placeholder="Courier Name (e.g. DTDC, BlueDart)"
+                      value={trackingData.courierName}
+                      onChange={(e) => setTrackingData(prev => ({...prev, courierName: e.target.value}))}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <input 
+                      type="text"
+                      placeholder="Tracking ID / AWB Number"
+                      value={trackingData.trackingId}
+                      onChange={(e) => setTrackingData(prev => ({...prev, trackingId: e.target.value}))}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                    <Package size={10} /> This info will be emailed to the customer.
+                  </p>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">New Status:</span>
-                  <span className="font-bold uppercase text-rose-600">{confirmModal.newStatus}</span>
-                </div>
-              </div>
+              )}
 
               <div className="flex gap-3 justify-end">
+                <button onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })} className="px-4 py-2.5 text-slate-600 font-medium hover:bg-slate-50 rounded-lg transition-colors text-sm">Cancel</button>
                 <button 
-                  onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })}
-                  className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-50 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={executeStatusUpdate}
-                  className="px-4 py-2 bg-slate-900 text-white font-medium rounded-lg hover:bg-slate-800 transition-colors shadow-lg shadow-slate-900/20"
+                  onClick={executeStatusUpdate} 
+                  className={`px-5 py-2.5 text-white font-medium rounded-lg shadow-lg flex items-center gap-2 text-sm transition-all
+                    ${confirmModal.newStatus === 'shipped' 
+                      ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200' 
+                      : 'bg-slate-900 hover:bg-slate-800 shadow-slate-200'}`}
                 >
                   Confirm Update
                 </button>
@@ -338,7 +417,6 @@ const OrderManagement = () => {
           </motion.div>
         </div>
       )}
-
     </div>
   );
 };
@@ -349,12 +427,13 @@ const StatCard = ({ label, value, icon, color }) => {
   const colors = {
     blue: 'bg-blue-50 text-blue-600 border-blue-100',
     amber: 'bg-amber-50 text-amber-600 border-amber-100',
-    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100'
+    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
   };
 
   return (
     <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
-      <div className={`p-3.5 rounded-xl border ${colors[color]}`}>
+      <div className={`p-3.5 rounded-xl border ${colors[color] || colors.blue}`}>
         {icon}
       </div>
       <div>
@@ -365,18 +444,18 @@ const StatCard = ({ label, value, icon, color }) => {
   );
 };
 
-const OrderRow = ({ order, formatDate, formatPrice, onRequestUpdate }) => {
+const OrderRow = ({ order, type, formatDate, formatPrice, onRequestUpdate }) => {
   const statusStyles = {
-    pending: 'bg-amber-100 text-amber-700 ring-1 ring-amber-200',
+    pending: 'bg-amber-100 text-amber-700 circle-1 ring-amber-200',
     confirmed: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200',
     processing: 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200',
-    shipped: 'bg-purple-100 text-purple-700 ring-1 ring-purple-200',
+    shipped: 'bg-purple-100 text-purple-700 round-1 round-purple-200',
     delivered: 'bg-emerald-100 text-emerald-700 ring-0 ring-emerald-200',
     cancelled: 'bg-red-50 text-red-600 ring-1 ring-red-100'
   };
 
   const paymentStyles = {
-    paid: 'text-emerald-600 bg-emerald-50 ring-1 ring-emerald-100',
+    completed: 'text-emerald-600 bg-emerald-50 ring-1 ring-emerald-100',
     pending: 'text-amber-600 bg-amber-50 ring-1 ring-amber-100',
     failed: 'text-red-600 bg-red-50 ring-1 ring-red-100'
   };
@@ -389,9 +468,14 @@ const OrderRow = ({ order, formatDate, formatPrice, onRequestUpdate }) => {
       className="hover:bg-slate-50 transition-colors group"
     >
       <td className="px-6 py-4 whitespace-nowrap">
-        <span className="font-mono font-medium text-slate-700 text-xs bg-slate-100 px-2 py-1 rounded">
-          #{order.orderNumber}
-        </span>
+        <div className="flex flex-col">
+          <span className="font-mono font-medium text-slate-700 text-xs bg-slate-100 px-2 py-1 rounded w-fit">
+            #{order.orderNumber || order._id.slice(-6).toUpperCase()}
+          </span>
+          {type === 'wholesale' && (
+            <span className="text-[10px] text-indigo-600 font-bold mt-1 uppercase tracking-wide">Wholesale</span>
+          )}
+        </div>
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-slate-500">
         <div className="flex items-center gap-2">
@@ -399,12 +483,28 @@ const OrderRow = ({ order, formatDate, formatPrice, onRequestUpdate }) => {
           {formatDate(order.createdAt)}
         </div>
       </td>
+      
       <td className="px-6 py-4 whitespace-nowrap">
-        <div className="flex flex-col">
-          <span className="font-semibold text-slate-700">{order.user?.name || 'Guest'}</span>
-          <span className="text-xs text-slate-400">{order.customerEmail}</span>
-        </div>
+        {type === 'wholesale' ? (
+          <div className="flex flex-col">
+            <span className="font-bold text-slate-800 flex items-center gap-1.5 text-sm">
+              <Building2 size={14} className="text-indigo-500"/>
+              {order.user?.businessDetails?.businessName || order.user?.name || 'N/A'}
+            </span>
+            {order.user?.businessDetails?.gstNumber && (
+              <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-1 rounded w-fit border border-slate-200 mt-0.5">
+                GST: {order.user.businessDetails.gstNumber}
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            <span className="font-semibold text-slate-700 text-sm">{order.user?.name || order.shippingAddress?.name || 'Guest'}</span>
+            <span className="text-xs text-slate-400">{order.customerEmail}</span>
+          </div>
+        )}
       </td>
+
       <td className="px-6 py-4 whitespace-nowrap font-bold text-slate-900">
         {formatPrice(order.totalAmount)}
       </td>
@@ -419,8 +519,8 @@ const OrderRow = ({ order, formatDate, formatPrice, onRequestUpdate }) => {
             value={order.status}
             onChange={(e) => onRequestUpdate(order._id, order.status, e.target.value)}
             className={`
-              pl-4 pr-0.5 py-1.5 rounded-full text-xs font-bold uppercase cursor-pointer outline-none appearance-none transition-all
-              focus:ring-2 focus:ring-offset-1 focus:ring-slate-200
+              pl-3 pr-3 py-1.5 rounded-full text-xs font-bold uppercase cursor-pointer outline-none appearance-none transition-all
+              focus:ring-1 focus:ring-offset-1 focus:ring-slate-200
               ${statusStyles[order.status] || 'bg-slate-100 text-slate-600'}
             `}
           >
@@ -430,6 +530,9 @@ const OrderRow = ({ order, formatDate, formatPrice, onRequestUpdate }) => {
               </option>
             ))}
           </select>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none opacity-50">
+            <ChevronRight size={12} className="rotate-90" />
+          </div>
         </div>
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-right">

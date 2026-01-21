@@ -5,7 +5,7 @@ import {
   IndianRupee, Package, Users, ShoppingBag, 
   Clock, AlertTriangle, Plus, FileText, 
   BarChart2, Layers, ArrowRight, RefreshCcw, Search,
-  Ticket, CheckCircle
+  Ticket, CheckCircle, Building2, UserCheck // Added new icons
 } from 'lucide-react';
 import { adminApi } from '../services/admin';
 
@@ -14,10 +14,11 @@ const AdminDashboard = () => {
   const [stats, setStats] = useState({ 
     totalRevenue: 0, 
     totalOrders: 0, 
-    totalUsers: 0, // Fallback if API doesn't provide
-    totalProducts: 0, // Fallback if API doesn't provide
+    totalUsers: 0,
+    totalProducts: 0,
     pendingOrders: 0,
-    lowStockProducts: 0 // Fallback
+    lowStockProducts: 0,
+    pendingResellers: 0 // Added for Reseller logic
   });
   const [recentOrders, setRecentOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,33 +33,42 @@ const AdminDashboard = () => {
       setLoading(true);
       setError(null);
 
-      // 1. Fetch Orders (High limit to calculate stats accurately on frontend)
-      // This ensures we apply the exact same logic as OrderManagement
+      // 1. Fetch Orders 
       const ordersData = await adminApi.getOrders({ limit: 1000 });
       const allOrders = ordersData.orders || [];
 
-      // 2. Fetch Generic Dashboard Stats (for User/Product counts if available)
+      // 2. Fetch Generic Dashboard Stats
       let dashboardStats = {};
       try {
         const response = await adminApi.getDashboardStats();
         dashboardStats = response.stats || {};
       } catch (err) {
-        console.warn("Could not fetch generic dashboard stats, using calculated values");
+        console.warn("Could not fetch generic dashboard stats");
       }
 
-      // --- CALCULATE STATS (The "Correct" Logic) ---
+      // 3. Fetch Pending Resellers (New Logic)
+      let pendingResellersCount = 0;
+      try {
+        // Assuming adminApi.getResellers exists from previous implementation
+        // If not, this block fails gracefully
+        const resellersData = await adminApi.getResellers({ status: 'pending' });
+        pendingResellersCount = resellersData.count || resellersData.resellers?.length || 0;
+      } catch (err) {
+        console.warn("Could not fetch reseller stats");
+      }
+
+      // --- CALCULATE STATS ---
       
-      // Logic: Revenue = Only orders with status 'delivered'
+      // Revenue: Only delivered orders
       const calculatedRevenue = allOrders
         .filter(o => o.status === 'delivered')
         .reduce((acc, curr) => acc + (curr.totalAmount || 0), 0);
 
-      // Logic: Pending = Active orders (Not delivered AND Not cancelled)
+      // Pending: Active orders (Not delivered/cancelled)
       const calculatedPending = allOrders
         .filter(o => o.status !== 'delivered' && o.status !== 'cancelled')
         .length;
 
-      // Logic: Total Orders = All orders (excluding cancelled? typically Total means All)
       const totalOrdersCount = allOrders.length;
 
       setStats({
@@ -67,10 +77,11 @@ const AdminDashboard = () => {
         pendingOrders: calculatedPending,
         totalUsers: dashboardStats.totalUsers || 0,
         totalProducts: dashboardStats.totalProducts || 0,
-        lowStockProducts: dashboardStats.lowStockProducts || 0
+        lowStockProducts: dashboardStats.lowStockProducts || 0,
+        pendingResellers: pendingResellersCount // Set new stat
       });
 
-      // 3. Set Recent Orders (Top 10)
+      // 4. Set Recent Orders (Top 10)
       setRecentOrders(allOrders.slice(0, 10));
 
     } catch (error) {
@@ -94,10 +105,8 @@ const AdminDashboard = () => {
     visible: { y: 0, opacity: 1 }
   };
 
-  // --- Loading Skeleton ---
   if (loading) return <DashboardSkeleton />;
 
-  // --- Error State ---
   if (error) {
     return (
       <div className="min-h-[80vh] flex flex-col items-center justify-center p-4">
@@ -139,7 +148,7 @@ const AdminDashboard = () => {
           className="space-y-8"
         >
           {/* --- Stat Cards Grid --- */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard 
               title="Realized Revenue" 
               value={formatPrice(stats.totalRevenue)} 
@@ -147,15 +156,17 @@ const AdminDashboard = () => {
               icon={<IndianRupee size={24} />} 
               color="emerald"
             />
+             {/* NEW: Reseller Request Card */}
             <StatCard 
-              title="Total Orders" 
-              value={stats.totalOrders} 
-              label="All time volume"
-              icon={<Package size={24} />} 
-              color="blue"
+              title="Reseller Requests" 
+              value={stats.pendingResellers} 
+              label="Pending Approval"
+              icon={<UserCheck size={24} />} 
+              color={stats.pendingResellers > 0 ? "rose" : "slate"} 
+              link="/admin/resellers"
             />
             <StatCard 
-              title="Pending Action" 
+              title="Pending Orders" 
               value={stats.pendingOrders} 
               label="Orders to fulfill"
               icon={<Clock size={24} />} 
@@ -176,21 +187,30 @@ const AdminDashboard = () => {
               color="pink"
             />
             <StatCard 
+              title="Total Orders" 
+              value={stats.totalOrders} 
+              label="All time volume"
+              icon={<Package size={24} />} 
+              color="blue"
+            />
+            <StatCard 
               title="Low Stock" 
               value={stats.lowStockProducts} 
               label="Restock needed"
               icon={<AlertTriangle size={24} />} 
-              color="rose"
+              color="orange"
             />
           </div>
 
           {/* --- Quick Actions --- */}
           <motion.div variants={itemVariants}>
             <h2 className="text-lg font-bold text-slate-900 mb-4">Quick Actions</h2>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <QuickAction to="/admin/products/create" icon={<Plus size={24} />} title="Add Product" color="slate" />
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+              <QuickAction to="/admin/products/new" icon={<Plus size={24} />} title="Add Product" color="slate" />
               <QuickAction to="/admin/orders" icon={<FileText size={24} />} title="Manage Orders" color="blue" />
-              <QuickAction to="/admin/coupons" icon={<Ticket size={24} />} title="Manage Coupons" color="violet" />
+              {/* NEW: Reseller Quick Action */}
+              <QuickAction to="/admin/resellers" icon={<Building2 size={24} />} title="Reseller Approvals" color="rose" />
+              <QuickAction to="/admin/coupons" icon={<Ticket size={24} />} title="Coupons" color="violet" />
               <QuickAction to="/admin/analytics" icon={<BarChart2 size={24} />} title="Analytics" color="emerald" />
               <QuickAction to="/admin/stock" icon={<Layers size={24} />} title="Stock Control" color="amber" />
             </div>
@@ -237,7 +257,13 @@ const AdminDashboard = () => {
                             <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-700 font-bold text-xs border border-rose-200">
                               {order.user?.name?.charAt(0) || 'G'}
                             </div>
-                            <span className="truncate max-w-[150px] font-medium text-slate-700">{order.user?.name || 'Guest User'}</span>
+                            <div className="flex flex-col">
+                              <span className="truncate max-w-[150px] font-medium text-slate-700">{order.user?.name || 'Guest User'}</span>
+                              {/* Show Reseller Tag if applicable */}
+                              {order.user?.role === 'reseller' && (
+                                <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">Reseller</span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 font-bold text-slate-900">{formatPrice(order.totalAmount)}</td>
                           <td className="px-6 py-4">
@@ -264,7 +290,12 @@ const AdminDashboard = () => {
                       <div className="flex justify-between items-start">
                         <div>
                           <span className="text-xs font-bold text-slate-400 font-mono">#{order.orderNumber}</span>
-                          <h4 className="font-semibold text-slate-900 mt-0.5">{order.user?.name || 'Guest User'}</h4>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <h4 className="font-semibold text-slate-900">{order.user?.name || 'Guest User'}</h4>
+                            {order.user?.role === 'reseller' && (
+                              <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">B2B</span>
+                            )}
+                          </div>
                         </div>
                         <StatusBadge status={order.status} />
                       </div>
@@ -291,7 +322,7 @@ const AdminDashboard = () => {
 
 // --- Sub Components ---
 
-const StatCard = ({ title, value, label, icon, color }) => {
+const StatCard = ({ title, value, label, icon, color, link }) => {
   const colors = {
     emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
     blue: 'bg-blue-50 text-blue-600 border-blue-100',
@@ -299,18 +330,36 @@ const StatCard = ({ title, value, label, icon, color }) => {
     pink: 'bg-pink-50 text-pink-600 border-pink-100',
     amber: 'bg-amber-50 text-amber-600 border-amber-100',
     rose: 'bg-rose-50 text-rose-600 border-rose-100',
+    slate: 'bg-slate-50 text-slate-600 border-slate-100',
+    orange: 'bg-orange-50 text-orange-600 border-orange-100',
   };
 
-  return (
-    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start justify-between hover:shadow-md transition-shadow group">
+  const Content = () => (
+    <>
       <div>
         <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">{title}</p>
         <h3 className="text-2xl font-bold text-slate-900 mb-1 leading-tight">{value}</h3>
         <p className="text-xs text-slate-400 font-medium">{label}</p>
       </div>
-      <div className={`p-3.5 rounded-xl border ${colors[color]} group-hover:scale-110 transition-transform duration-300`}>
+      <div className={`p-3.5 rounded-xl border ${colors[color] || colors.slate} group-hover:scale-110 transition-transform duration-300`}>
         {icon}
       </div>
+    </>
+  );
+
+  if (link) {
+    return (
+      <Link to={link} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start justify-between hover:shadow-md transition-shadow group cursor-pointer relative overflow-hidden">
+        {/* Subtle Indicator for clickable cards */}
+        <div className="absolute top-0 right-0 w-2 h-2 bg-rose-500 rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity" />
+        <Content />
+      </Link>
+    );
+  }
+
+  return (
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start justify-between hover:shadow-md transition-shadow group">
+      <Content />
     </div>
   );
 };
@@ -322,6 +371,7 @@ const QuickAction = ({ to, icon, title, color }) => {
     violet: 'group-hover:text-violet-600 group-hover:bg-violet-100',
     emerald: 'group-hover:text-emerald-600 group-hover:bg-emerald-100',
     amber: 'group-hover:text-amber-600 group-hover:bg-amber-100',
+    rose: 'group-hover:text-rose-600 group-hover:bg-rose-100',
   };
 
   return (
@@ -359,13 +409,13 @@ const DashboardSkeleton = () => (
         <div className="h-8 bg-slate-200 rounded w-1/3"></div>
         <div className="h-8 bg-slate-200 rounded w-10"></div>
     </div>
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-      {[...Array(6)].map((_, i) => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      {[...Array(8)].map((_, i) => (
         <div key={i} className="h-32 bg-slate-200 rounded-2xl"></div>
       ))}
     </div>
-    <div className="grid grid-cols-5 gap-4">
-       {[...Array(5)].map((_, i) => (
+    <div className="grid grid-cols-6 gap-4">
+       {[...Array(6)].map((_, i) => (
         <div key={i} className="h-24 bg-slate-200 rounded-2xl"></div>
       ))}
     </div>

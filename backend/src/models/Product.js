@@ -1,5 +1,24 @@
 const mongoose = require('mongoose');
 
+// Schema for individual color variants
+const variantSchema = new mongoose.Schema({
+  colorName: { 
+    type: String, 
+    required: true,
+    trim: true 
+  },
+  hexCode: { 
+    type: String, 
+    required: true,
+    trim: true 
+  },
+  stock: {
+    type: Number,
+    default: 0,
+    min: [0, 'Variant stock cannot be negative']
+  }
+}, { _id: true });
+
 const productSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -15,75 +34,62 @@ const productSchema = new mongoose.Schema({
     required: [true, 'Price is required'],
     min: [0, 'Price cannot be negative']
   },
-  discountedPrice: {
-    type: Number,
-    default: null
-  },
-  discountPercentage: {
-    type: Number,
-    default: 0,
-    min: [0, 'Discount percentage cannot be negative'],
-    max: [100, 'Discount percentage cannot exceed 100%']
-  },
-  discountStartDate: {
-    type: Date
-  },
-  discountEndDate: {
-    type: Date
-  },
-  category: {
-    type: String,
-    required: [true, 'Category is required'],
-    trim: true
-  },
-  brand: {
-    type: String,
-    trim: true
-  },
-  colors: [{
-    type: String,
-    trim: true
-  }],
- sizes: [{
-  type: String,
-  trim: true
-}],
   images: [{
     url: String,
-    alt: String
+    fileId: String, // GridFS ID
+    imageId: String // Alternative ID reference
   }],
+  sizes: {
+  type: [String],
+  default: [],
+},
+  category: {
+    type: String,
+    required: [true, 'Category is required']
+  },
   stock: {
     type: Number,
-    required: [true, 'Stock quantity is required'],
-    default: 0,
-    min: [0, 'Stock cannot be negative']
+    required: true,
+    min: 0,
+    default: 0
   },
-  featured: {
-    type: Boolean,
-    default: false
+  
+  // --- PRICING & LOGISTICS ---
+
+  // 1. Retail Settings
+  retail: {
+    shippingCost: { type: Number, default: 0, min: 0 },
+    taxPercentage: { type: Number, default: 0, min: 0, max: 100 }
   },
-  ratings: {
-    average: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 5
-    },
-    count: {
-      type: Number,
-      default: 0
-    }
+
+  // 2. Wholesale Settings
+  wholesalePrice: { 
+    type: Number, 
+    min: 0,
+    default: 0
   },
-  specifications: {
-    fabric: String,
-    length: String,
-    work: String,
-    blousePiece: {
-      type: Boolean,
-      default: true
-    }
+  wholesale: {
+    shippingCost: { type: Number, default: 0, min: 0 },
+    taxPercentage: { type: Number, default: 0, min: 0, max: 100 }
   },
+
+  // --- DISCOUNTS ---
+  isDiscountActive: { type: Boolean, default: false },
+  discountPercentage: { type: Number, default: 0, min: 0, max: 100 },
+  discountStartDate: Date,
+  discountEndDate: Date,
+
+  // --- METADATA ---
   tags: [String],
+  variants: [variantSchema],
+  ratings: {
+    average: { type: Number, default: 0 },
+    count: { type: Number, default: 0 }
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -94,52 +100,58 @@ const productSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Virtual for final price (only when discount is active)
+// --- VIRTUALS & METHODS ---
+
+// Virtual: Final Price (Retail with Discount)
 productSchema.virtual('finalPrice').get(function() {
-  if (this.isDiscountActive()) {
-    const discountAmount = (this.price * this.discountPercentage) / 100;
-    return this.price - discountAmount;
+  if (this.checkDiscountActive()) {
+    return this.price - (this.price * this.discountPercentage) / 100;
   }
   return this.price;
 });
 
-productSchema.virtual('discountActive').get(function() {
-  return this.isDiscountActive();
-});
-
-productSchema.virtual('currentPrice').get(function() {
-  return this.getCurrentPrice();
-});
-
-// Method to check if discount is currently active
-productSchema.methods.isDiscountActive = function() {
-  if (this.discountPercentage <= 0) return false;
-  
+// Method: Check if discount is valid
+productSchema.methods.checkDiscountActive = function() {
+  if (!this.isDiscountActive || this.discountPercentage <= 0) return false;
   const now = new Date();
-  
   if (this.discountStartDate && now < this.discountStartDate) return false;
   if (this.discountEndDate && now > this.discountEndDate) return false;
-  
   return true;
 };
 
-// Method to get current final price
-productSchema.methods.getCurrentPrice = function() {
-  if (this.isDiscountActive()) {
+// Method: Get Price based on Role
+productSchema.methods.getCurrentPrice = function(userRole = 'user') {
+  if (userRole === 'reseller' && this.wholesalePrice > 0) {
+    return this.wholesalePrice;
+  }
+  if (this.checkDiscountActive()) {
     return this.finalPrice;
   }
   return this.price;
 };
 
-// Index for search
-productSchema.index({ name: 'text', description: 'text', tags: 'text' });
+// ✅ FIX: Missing Method 1 - Get Shipping Cost
+productSchema.methods.getShippingCost = function(userRole = 'user') {
+  if (userRole === 'reseller') {
+    // If wholesale shipping is set, use it. Otherwise fall back to 0 or Retail if desired.
+    // Usually wholesale shipping is higher or calculated differently.
+    return this.wholesale?.shippingCost || 0;
+  }
+  return this.retail?.shippingCost || 0;
+};
 
-// Pre-save middleware to update discountedPrice when discount changes
+// ✅ FIX: Missing Method 2 - Get Tax Percentage
+productSchema.methods.getTaxPercentage = function(userRole = 'user') {
+  if (userRole === 'reseller') {
+    return this.wholesale?.taxPercentage || 0;
+  }
+  return this.retail?.taxPercentage || 0;
+};
+
+// Pre-save hook to calc total stock from variants
 productSchema.pre('save', function(next) {
-  if (this.isDiscountActive()) {
-    this.discountedPrice = this.finalPrice;
-  } else {
-    this.discountedPrice = null;
+  if (this.variants && this.variants.length > 0) {
+    this.stock = this.variants.reduce((total, v) => total + (v.stock || 0), 0);
   }
   next();
 });

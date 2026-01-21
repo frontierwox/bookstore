@@ -25,21 +25,20 @@ const adminApi = {
   },
 
   // Coupons
-createCoupon: async (couponData) => {
-  const response = await api.post('/admin/coupons', couponData);
-  return response.data;
-},
+  createCoupon: async (couponData) => {
+    const response = await api.post('/admin/coupons', couponData);
+    return response.data;
+  },
 
-getCoupons: async () => {
-  const response = await api.get('/admin/coupons');
-  return response.data;
-},
+  getCoupons: async () => {
+    const response = await api.get('/admin/coupons');
+    return response.data;
+  },
 
-deleteCoupon: async (couponId) => {
-  const response = await api.delete(`/admin/coupons/${couponId}`);
-  return response.data;
-},
-
+  deleteCoupon: async (couponId) => {
+    const response = await api.delete(`/admin/coupons/${couponId}`);
+    return response.data;
+  },
 
   // Products
   getProducts: async (params = {}) => {
@@ -114,6 +113,20 @@ deleteCoupon: async (couponId) => {
     const response = await api.put(`/admin/users/${userId}/status`, statusData);
     return response.data;
   },
+
+  // --- NEW: Reseller Management ---
+  getResellers: async (params = {}) => {
+    // params can include { status: 'pending' }
+    const response = await api.get('/admin/resellers/pending', { params });
+    return response.data;
+  },
+
+  updateResellerStatus: async (userId, status) => {
+    // status: 'approved', 'rejected', etc.
+    const response = await api.put(`/admin/resellers/${userId}/status`, { status });
+    return response.data;
+  },
+  // -------------------------------
 
   // File Upload
   uploadImage: async (formData) => {

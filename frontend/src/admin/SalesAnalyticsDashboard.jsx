@@ -1,24 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, 
   Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend 
 } from 'recharts';
 import { motion } from 'framer-motion';
 import { 
   TrendingUp, TrendingDown, DollarSign, ShoppingBag, Truck, 
-  Download, Filter, Calendar, Search, Eye, RefreshCw, 
-  CheckCircle, Clock, XCircle, AlertTriangle 
+  RefreshCw, Calendar, Search, Eye,
+  CheckCircle, Clock, XCircle, Package, AlertTriangle, Filter
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { adminApi } from '../services/admin';
 import { Link } from 'react-router-dom';
+import { adminApi } from '../services/admin'; 
 
 // --- Theme Configuration ---
 const COLORS = {
   primary: '#e11d48', // Rose-600
   secondary: '#64748b', // Slate-500
   grid: '#f1f5f9',
-  pie: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444'] // Blue, Violet, Emerald, Amber, Red
+  pie: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444']
 };
 
 const SalesAnalyticsDashboard = () => {
@@ -26,7 +26,7 @@ const SalesAnalyticsDashboard = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [period, setPeriod] = useState('month'); // 'week', 'month', 'year'
+  const [period, setPeriod] = useState('week'); // 'week', 'month', 'year'
   
   // Filters
   const [currentPage, setCurrentPage] = useState(1);
@@ -39,9 +39,9 @@ const SalesAnalyticsDashboard = () => {
     try {
       if (!isRefreshing) setLoading(true);
       
-      // Fetch a large batch of orders to calculate accurate analytics on the frontend
-      // This ensures revenue/counts match exactly what is in the database
+      // Fetch Real Data - Get ALL orders to calculate analytics client-side accurately
       const response = await adminApi.getOrders({ limit: 2000, sort: '-createdAt' });
+      
       setOrders(response.orders || []);
       
     } catch (error) {
@@ -55,6 +55,7 @@ const SalesAnalyticsDashboard = () => {
 
   useEffect(() => {
     loadDashboardData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleRefresh = () => {
@@ -62,57 +63,92 @@ const SalesAnalyticsDashboard = () => {
     loadDashboardData();
   };
 
-  // --- ANALYTICS LOGIC (Memoized) ---
+  // --- ANALYTICS LOGIC ---
 
   // 1. Filter Orders by Time Period
   const periodOrders = useMemo(() => {
+    if (!orders.length) return [];
+    
     const now = new Date();
     const cutoff = new Date();
     
-    if (period === 'week') cutoff.setDate(now.getDate() - 7);
-    if (period === 'month') cutoff.setMonth(now.getMonth() - 1);
-    if (period === 'year') cutoff.setFullYear(now.getFullYear() - 1);
+    // Set time to end of day to include today's orders
+    now.setHours(23, 59, 59, 999); 
+    
+    if (period === 'week') {
+       cutoff.setDate(now.getDate() - 7);
+       cutoff.setHours(0, 0, 0, 0);
+    } else if (period === 'month') {
+       cutoff.setDate(1); // Start of current month
+       cutoff.setHours(0, 0, 0, 0);
+    } else if (period === 'year') {
+       cutoff.setMonth(0, 1); // Start of current year
+       cutoff.setHours(0, 0, 0, 0);
+    }
 
     return orders.filter(o => new Date(o.createdAt) >= cutoff);
   }, [orders, period]);
 
-  // 2. Calculate KPIs (Revenue = DELIVERED ONLY)
+  // 2. KPI Calculations
   const kpiData = useMemo(() => {
+    // Only count DELIVERED orders for revenue to be accurate
     const deliveredOrders = periodOrders.filter(o => o.status === 'delivered');
     
-    const revenue = deliveredOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    const revenue = deliveredOrders.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
     const totalOrders = periodOrders.length;
-    const avgOrderValue = totalOrders > 0 ? revenue / deliveredOrders.length : 0; // Avg based on successful orders
-
-    // Previous Period Simulation (for growth stats) - Simplified
-    // In a real app, you'd calculate this based on the previous date range
-    const growth = Math.random() * 10 - 2; // Random -2% to +8% for demo
-
-    return { revenue, totalOrders, avgOrderValue, growth };
+    const avgOrderValue = deliveredOrders.length > 0 ? revenue / deliveredOrders.length : 0;
+    
+    return { revenue, totalOrders, avgOrderValue, growth: 0 }; 
   }, [periodOrders]);
 
-  // 3. Generate Chart Data (Dynamic)
-  const revenueChartData = useMemo(() => {
-    // Group by Date
-    const grouped = {};
-    const options = period === 'year' ? { month: 'short' } : { day: 'numeric', month: 'short' };
+  // 3. CHART DATA GENERATION
+  const chartData = useMemo(() => {
+    const now = new Date();
+    let dataMap = new Map();
 
+    // A. Initialize Buckets (Zero-Filling) based on period
+    if (period === 'week') {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(now.getDate() - i);
+        const key = d.toLocaleDateString('en-IN', { weekday: 'short' }); // Mon, Tue
+        dataMap.set(key, 0);
+      }
+    } else if (period === 'month') {
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      for (let i = 1; i <= daysInMonth; i++) {
+        dataMap.set(i.toString(), 0);
+      }
+    } else if (period === 'year') {
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      monthNames.forEach(m => dataMap.set(m, 0));
+    }
+
+    // B. Fill Buckets with Data
     periodOrders.forEach(order => {
-      // STRICT RULE: Only delivered orders contribute to the Revenue Chart
+      // Revenue logic: Only count 'delivered' orders
       if (order.status !== 'delivered') return;
 
-      const dateKey = new Date(order.createdAt).toLocaleDateString('en-IN', options);
-      if (!grouped[dateKey]) grouped[dateKey] = 0;
-      grouped[dateKey] += order.totalAmount;
+      const date = new Date(order.createdAt);
+      let key = '';
+
+      if (period === 'week') {
+        key = date.toLocaleDateString('en-IN', { weekday: 'short' });
+      } else if (period === 'month') {
+        key = date.getDate().toString();
+      } else if (period === 'year') {
+        key = date.toLocaleDateString('en-IN', { month: 'short' });
+      }
+
+      if (dataMap.has(key)) {
+        dataMap.set(key, dataMap.get(key) + (Number(order.totalAmount) || 0));
+      }
     });
 
-    return Object.keys(grouped).map(key => ({
-      name: key,
-      revenue: grouped[key]
-    })).reverse(); // Show oldest to newest
+    return Array.from(dataMap, ([name, revenue]) => ({ name, revenue }));
   }, [periodOrders, period]);
 
-  // 4. Status Distribution (Pie Chart)
+  // 4. Status Distribution
   const statusDistribution = useMemo(() => {
     const stats = { pending: 0, processing: 0, shipped: 0, delivered: 0, cancelled: 0 };
     periodOrders.forEach(o => {
@@ -129,19 +165,18 @@ const SalesAnalyticsDashboard = () => {
     ].filter(item => item.value > 0);
   }, [periodOrders]);
 
-  // 5. Filtered Table Data
+  // 5. Table Filters
   const filteredTableData = useMemo(() => {
     return orders.filter(order => {
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = 
-        order.orderNumber.toLowerCase().includes(searchLower) ||
-        order.user?.name?.toLowerCase().includes(searchLower);
+        (order.orderNumber || '').toLowerCase().includes(searchLower) ||
+        (order.user?.name || '').toLowerCase().includes(searchLower);
       const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
   }, [orders, searchTerm, statusFilter]);
 
-  // --- Helpers ---
   const formatPrice = (price) => 
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price || 0);
 
@@ -158,12 +193,11 @@ const SalesAnalyticsDashboard = () => {
             <h1 className="text-3xl font-serif font-bold text-slate-900 tracking-tight">Sales Analytics</h1>
             <p className="text-slate-500 mt-1 flex items-center gap-2 text-sm">
               <Calendar size={14} /> 
-              Showing data for: <span className="font-semibold text-slate-900 capitalize">{period}</span>
+              Overview for: <span className="font-semibold text-slate-900 capitalize">{period}</span>
             </p>
           </div>
           
           <div className="flex flex-wrap items-center gap-3">
-            {/* Period Tabs */}
             <div className="flex bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
               {['week', 'month', 'year'].map((p) => (
                 <button
@@ -183,13 +217,8 @@ const SalesAnalyticsDashboard = () => {
             <button 
               onClick={handleRefresh}
               className="p-2 bg-white border border-slate-200 text-slate-500 rounded-lg hover:text-rose-600 hover:border-rose-200 transition-all shadow-sm"
-              title="Refresh Data"
             >
               <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
-            </button>
-            
-            <button className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors shadow-md shadow-rose-200/50 font-medium text-sm">
-              <Download size={16} /> Export Report
             </button>
           </div>
         </div>
@@ -197,9 +226,9 @@ const SalesAnalyticsDashboard = () => {
         {/* --- KPI Grid --- */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <KPICard 
-            title="Realized Revenue" 
+            title="Total Revenue" 
             value={formatPrice(kpiData.revenue)} 
-            subLabel="Delivered orders only"
+            subLabel="From delivered orders"
             growth={kpiData.growth}
             icon={<DollarSign size={24} />}
             color="emerald"
@@ -207,16 +236,16 @@ const SalesAnalyticsDashboard = () => {
           <KPICard 
             title="Total Orders" 
             value={kpiData.totalOrders} 
-            subLabel="Volume in this period"
-            growth={1.2}
+            subLabel="All order statuses"
+            growth={0}
             icon={<ShoppingBag size={24} />}
             color="blue"
           />
           <KPICard 
             title="Avg. Order Value" 
-            value={formatPrice(kpiData.avgOrderValue || 0)} 
+            value={formatPrice(kpiData.avgOrderValue)} 
             subLabel="Revenue / Delivered Count"
-            growth={-0.5}
+            growth={0}
             icon={<Truck size={24} />}
             color="violet"
           />
@@ -225,88 +254,100 @@ const SalesAnalyticsDashboard = () => {
         {/* --- Charts Section --- */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8">
           
-          {/* Main Revenue Chart */}
+          {/* Main Revenue Bar Chart */}
           <div className="xl:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Revenue Trend</h3>
-                <p className="text-sm text-slate-500">Income from delivered orders</p>
+                <h3 className="text-lg font-bold text-slate-900">Revenue Breakdown</h3>
+                <p className="text-sm text-slate-500">
+                  {period === 'week' ? 'Daily revenue (Last 7 Days)' : 
+                   period === 'month' ? 'Daily revenue (Current Month)' : 
+                   'Monthly revenue (Current Year)'}
+                </p>
               </div>
             </div>
             
-            <div className="h-[350px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={revenueChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={COLORS.primary} stopOpacity={0.1}/>
-                      <stop offset="95%" stopColor={COLORS.primary} stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={COLORS.grid} />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{fill: COLORS.secondary, fontSize: 12}} 
-                    dy={10} 
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{fill: COLORS.secondary, fontSize: 12}} 
-                    tickFormatter={(value) => `₹${value/1000}k`} 
-                  />
-                  <RechartsTooltip 
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                    formatter={(value) => [formatPrice(value), 'Revenue']}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="revenue" 
-                    stroke={COLORS.primary} 
-                    strokeWidth={3} 
-                    fillOpacity={1} 
-                    fill="url(#colorRevenue)" 
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div className="h-[400px] w-full min-w-0">
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={COLORS.grid} />
+                    <XAxis 
+                      dataKey="name" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{fill: COLORS.secondary, fontSize: 12}} 
+                      dy={10} 
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{fill: COLORS.secondary, fontSize: 12}} 
+                      tickFormatter={(value) => `₹${value >= 1000 ? (value/1000).toFixed(0) + 'k' : value}`} 
+                    />
+                    <RechartsTooltip 
+                      cursor={{ fill: '#f8fafc' }}
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      formatter={(value) => [formatPrice(value), 'Revenue']}
+                    />
+                    <Bar 
+                      dataKey="revenue" 
+                      fill={COLORS.primary} 
+                      radius={[4, 4, 0, 0]}
+                      barSize={period === 'month' ? 12 : 32} 
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                  <AlertTriangle size={32} className="mb-2 opacity-50"/>
+                  <p>No revenue data for this period</p>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Order Status Distribution */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col">
             <h3 className="text-lg font-bold text-slate-900 mb-1">Order Status</h3>
-            <p className="text-sm text-slate-500 mb-6">Distribution in selected period</p>
+            <p className="text-sm text-slate-500 mb-6">Current period distribution</p>
 
-            <div className="flex-1 min-h-[250px] relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={statusDistribution}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {statusDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS.pie[index % COLORS.pie.length]} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none' }} />
-                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                </PieChart>
-              </ResponsiveContainer>
-              
-              {/* Center Text overlay */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none pb-8">
-                <div className="text-center">
-                  <span className="block text-2xl font-bold text-slate-900">{periodOrders.length}</span>
-                  <span className="text-xs text-slate-500 uppercase font-semibold">Total</span>
+            <div className="h-[300px] w-full relative">
+              {statusDistribution.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={statusDistribution}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {statusDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS.pie[index % COLORS.pie.length]} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none' }} />
+                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                   <Package size={32} className="mb-2 opacity-50"/>
+                   <p>No orders in this period</p>
                 </div>
-              </div>
+              )}
+              
+              {statusDistribution.length > 0 && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none pb-8">
+                  <div className="text-center">
+                    <span className="block text-2xl font-bold text-slate-900">{periodOrders.length}</span>
+                    <span className="text-xs text-slate-500 uppercase font-semibold">Total</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -314,7 +355,7 @@ const SalesAnalyticsDashboard = () => {
         {/* --- Filterable Orders Table --- */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <h3 className="text-lg font-bold text-slate-900">All Orders</h3>
+            <h3 className="text-lg font-bold text-slate-900">Recent Orders</h3>
             
             <div className="flex gap-3">
               <div className="relative">
@@ -359,9 +400,9 @@ const SalesAnalyticsDashboard = () => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredTableData.length > 0 ? filteredTableData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((order) => (
-                  <tr key={order._id} className="hover:bg-slate-50/80 transition-colors">
+                  <tr key={order._id || Math.random()} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-6 py-4 font-medium text-slate-900">
-                      #{order.orderNumber}
+                      #{order.orderNumber || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {new Date(order.createdAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -378,13 +419,12 @@ const SalesAnalyticsDashboard = () => {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                         <Link 
-                           to={`/admin/orders/${order._id}`}
-                           className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                           title="View Details"
-                         >
-                           <Eye size={16} />
-                         </Link>
+                          <Link 
+                            to={`/admin/orders/${order._id}`}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          >
+                            <Eye size={16} />
+                          </Link>
                       </div>
                     </td>
                   </tr>
@@ -445,12 +485,13 @@ const KPICard = ({ title, value, subLabel, growth, icon, color }) => {
         <div className={`p-3 rounded-xl ${colors[color]}`}>
           {icon}
         </div>
+        {/* Growth badge is purely visual here as we calculate realtime, historical comparison needs more data */}
         <div className={`
           flex items-center gap-1 font-bold text-xs px-2 py-1 rounded-full
           ${isPositive ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'}
         `}>
-          {isPositive ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-          {Math.abs(growth || 0).toFixed(1)}%
+          <TrendingUp size={12} />
+          Live Data
         </div>
       </div>
       

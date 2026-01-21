@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { 
   MdShoppingCart, MdPerson, MdSearch, MdMenu, MdClose, 
-  MdLogout, MdDashboard, MdShoppingBag
+  MdLogout, MdDashboard, MdShoppingBag, MdStore
 } from 'react-icons/md'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AuthContext } from '../context/AuthContext'
@@ -24,6 +24,14 @@ const Navbar = ({}) => {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+
+  // --- Reseller Logic ---
+  const isReseller = user?.role === 'reseller'
+  // Dynamic routes based on user role
+  const homeRoute = isReseller ? '/reseller/dashboard' : '/'
+  const productsRoute = isReseller ? '/reseller/catalog' : '/products'
+  const cartRoute = isReseller ? '/reseller/cart' : '/cart'
+  const showCartBadge = !isReseller && itemCount > 0
 
   // --- Effects ---
   useEffect(() => {
@@ -83,7 +91,7 @@ const Navbar = ({}) => {
           ${isVisible ? 'translate-y-0' : '-translate-y-full'}
           ${isScrolled 
             ? 'bg-white/90 backdrop-blur-md shadow-sm py-2' 
-            : 'bg-white border-b border-transparent py-4'
+            : 'bg-white border-b border-transparent py-2'
           }
         `}
       >
@@ -100,7 +108,7 @@ const Navbar = ({}) => {
                 <MdMenu size={28} />
               </button>
 
-              <Link to="/" className="flex items-center gap-2 group">
+              <Link to={homeRoute} className="flex items-center gap-2 group">
                 <h1 className="font-Alice text-xl font-bold tracking-tight text-slate-900 group-hover:text-rose-600 transition-colors">
                   Shri Sai Collections
                 </h1>
@@ -110,8 +118,8 @@ const Navbar = ({}) => {
             {/* 2. CENTER: Desktop Nav & Search */}
             <div className="hidden lg:flex items-center flex-1 justify-center gap-8 px-8">
               <nav className="flex items-center gap-8 font-medium text-sm text-slate-600">
-                <NavLink to="/">Home</NavLink>
-                <NavLink to="/products">Collection</NavLink>
+                <NavLink to={homeRoute}>Home</NavLink>
+                <NavLink to={productsRoute}>Collection</NavLink>
               </nav>
 
               <form onSubmit={handleSearch} className="relative w-full max-w-sm group">
@@ -137,15 +145,17 @@ const Navbar = ({}) => {
                 <MdSearch size={26} />
               </button>
 
-              {/* Cart Icon */}
+              {/* Cart Icon (Dynamic Link & Badge Logic) */}
               <Link
-                to="/cart"
+                to={cartRoute}
                 className="relative p-2 text-slate-700 hover:text-rose-600 transition-colors group flex items-center gap-2"
               >
                 <div className="relative">
                   <MdShoppingCart size={26} />
                 </div>
-                <span className="hidden sm:block text-sm font-medium">Cart</span>
+                <span className="hidden sm:block text-sm font-medium">
+                  {isReseller ? 'Order' : 'Cart'}
+                </span>
               </Link>
 
               {/* User Menu (Desktop + Mobile Dropdown) */}
@@ -177,11 +187,21 @@ const Navbar = ({}) => {
                           <div className="px-5 py-4 border-b border-slate-50 bg-slate-50/50">
                             <p className="text-sm font-bold text-slate-900 truncate">{user.name}</p>
                             <p className="text-xs text-slate-500 truncate mt-0.5">{user.email}</p>
+                            {/* Role Badge */}
+                            {user.role !== 'user' && (
+                              <span className={`inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider 
+                                ${user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                {user.role === 'reseller' ? 'Partner' : user.role}
+                              </span>
+                            )}
                           </div>
                           
                           <div className="py-2">
                             {user.role === 'admin' ? (
                               <DropdownItem to="/admin/dashboard" icon={<MdDashboard size={18}/>} label="Admin Dashboard" />
+                            ) : user.role === 'reseller' ? (
+                              // Reseller Dashboard Link
+                              <DropdownItem to="/reseller/dashboard" icon={<MdStore size={18}/>} label="Reseller Dashboard" />
                             ) : (
                               <DropdownItem to="/profile" icon={<MdPerson size={18}/>} label="My Profile" />
                             )}
@@ -276,10 +296,10 @@ const Navbar = ({}) => {
 
               <div className="flex-1 overflow-y-auto py-6 px-4">
                 <nav className="space-y-1">
-                  <MobileLink to="/" onClick={() => setMobileMenuOpen(false)}>Home</MobileLink>
-                  <MobileLink to="/products" onClick={() => setMobileMenuOpen(false)}>Shop Collection</MobileLink>
-                  <MobileLink to="/cart" onClick={() => setMobileMenuOpen(false)}>
-                    Cart 
+                  <MobileLink to={homeRoute} onClick={() => setMobileMenuOpen(false)}>Home</MobileLink>
+                  <MobileLink to={productsRoute} onClick={() => setMobileMenuOpen(false)}>Shop Collection</MobileLink>
+                  <MobileLink to={cartRoute} onClick={() => setMobileMenuOpen(false)}>
+                    {isReseller ? 'Wholesale Order' : 'Cart'}
                   </MobileLink>
                 </nav>
                 
@@ -291,11 +311,18 @@ const Navbar = ({}) => {
                       <div className="px-4 py-2 mb-2">
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Account</span>
                       </div>
-                      <MobileLink to="/profile" onClick={() => setMobileMenuOpen(false)} icon={<MdPerson />}>Profile</MobileLink>
-                      <MobileLink to="/orders" onClick={() => setMobileMenuOpen(false)} icon={<MdShoppingBag />}>Orders</MobileLink>
-                      {user.role === 'admin' && (
-                         <MobileLink to="/admin/dashboard" onClick={() => setMobileMenuOpen(false)} icon={<MdDashboard />}>Admin Panel</MobileLink>
+                      
+                      {user.role === 'admin' ? (
+                        <MobileLink to="/admin/dashboard" onClick={() => setMobileMenuOpen(false)} icon={<MdDashboard />}>Admin Panel</MobileLink>
+                      ) : user.role === 'reseller' ? (
+                        // Mobile Reseller Link
+                        <MobileLink to="/reseller/dashboard" onClick={() => setMobileMenuOpen(false)} icon={<MdStore />}>Reseller Dashboard</MobileLink>
+                      ) : (
+                        <MobileLink to="/profile" onClick={() => setMobileMenuOpen(false)} icon={<MdPerson />}>Profile</MobileLink>
                       )}
+
+                      <MobileLink to="/orders" onClick={() => setMobileMenuOpen(false)} icon={<MdShoppingBag />}>Orders</MobileLink>
+                      
                       <button 
                         onClick={() => { logout(); setMobileMenuOpen(false); }}
                         className="w-full flex items-center px-4 py-3.5 text-red-600 hover:bg-red-50 rounded-xl transition-colors font-medium text-sm mt-2"

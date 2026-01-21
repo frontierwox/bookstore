@@ -50,23 +50,100 @@ exports.register = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
+// @route   POST /api/auth/register-reseller
+exports.registerReseller = asyncHandler(async (req, res) => {
+  const { 
+    name, 
+    email, 
+    password, 
+    phone, 
+    businessName, 
+    gstNumber, 
+    panNumber, // New
+    address,   // New
+    socialLink // New
+  } = req.body;
+
+  // 1. Check if user exists
+  const userExists = await User.findOne({ email });
+  if (userExists) {
+    throw new AppError(400, 'User already exists with this email');
+  }
+
+  // 2. Create User
+  const user = await User.create({
+    name,
+    email,
+    password,
+    phone,
+    role: 'reseller',
+    resellerStatus: 'pending', // IMPORTANT: Default to pending
+    
+    // Store Business Specifics
+    businessDetails: {
+      businessName,
+      gstNumber,
+      panNumber,
+      socialLink
+    },
+
+    // Automatically add the provided address to their address book
+    addresses: address ? [{
+      address: address,
+      // Since the simple form doesn't ask for city/state/zip separately yet, 
+      // we leave them empty or you can parse them if needed.
+      city: '', 
+      state: '',
+      pincode: '',
+      isDefault: true,
+      name: businessName || name,
+      phone: phone
+    }] : []
+  });
+
+  // 3. Response (Do not return token if you want them to wait for approval)
+  // For now, we return success message
+  res.status(201).json({
+    success: true,
+    message: 'Reseller application submitted successfully. Please wait for admin approval.',
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      resellerStatus: user.resellerStatus
+    }
+  });
+});
+
+// @desc    Login user (Ensure this checks reseller status)
 exports.login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  const user = await User.findOne({ email }).select('+password +role');
-  if (!user) {
+  const user = await User.findOne({ email }).select('+password +role +resellerStatus');
+
+  if (!user || !(await user.comparePassword(password))) {
     throw new AppError(401, 'Invalid email or password');
   }
 
-  const isMatch = await user.comparePassword(password);
-
-  if (!isMatch) {
-    throw new AppError(401, 'Invalid email or password');
+  // Reseller Verification Logic
+  if (user.role === 'reseller') {
+    if (user.resellerStatus === 'pending') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your reseller account is pending approval. Please contact support.',
+        isPending: true
+      });
+    }
+    if (user.resellerStatus === 'rejected') {
+      throw new AppError(403, 'Your reseller application was rejected.');
+    }
+    if (user.resellerStatus === 'suspended') {
+      throw new AppError(403, 'Your reseller account has been suspended.');
+    }
   }
 
+  // ... Generate token and send response ...
   const token = generateToken(user);
 
   res.json({
@@ -76,7 +153,9 @@ exports.login = asyncHandler(async (req, res) => {
       _id: user._id,
       name: user.name,
       email: user.email,
-      role: user.role
+      role: user.role,
+      resellerStatus: user.resellerStatus,
+      // ... other fields
     }
   });
 });

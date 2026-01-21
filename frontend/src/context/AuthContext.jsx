@@ -1,5 +1,7 @@
 import React, { createContext, useState, useCallback, useEffect } from 'react';
 import api from '../services/api';
+import authApi from '../services/auth';
+
 
 export const AuthContext = createContext();
 
@@ -48,6 +50,27 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+const registerReseller = useCallback(async (formData) => {
+  try {
+    setLoading(true);
+
+    const response = await authApi.registerReseller(formData);
+
+    return {
+      success: response.success,
+      message: response.message,
+      user: response.user
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.response?.data?.message || 'Registration failed'
+    };
+  } finally {
+    setLoading(false);
+  }
+}, []);
+
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
@@ -61,6 +84,7 @@ export const AuthProvider = ({ children }) => {
         token,
         loading,
         login,
+        registerReseller,
         logout,
         isAuthenticated: !!token
       }}

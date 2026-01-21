@@ -44,6 +44,7 @@ const {
 
 const { verifyToken, verifyAdmin } = require('../middleware/auth');
 const { validateProductInput } = require('../middleware/validation');
+const { getPendingResellers, updateResellerStatus } = require('../controllers/adminController');
 const multer = require('multer');
 
 const upload = multer({
@@ -108,6 +109,8 @@ router.get('/orders/export', exportOrders);  // GET /api/admin/orders/export
 router.get('/orders/:id', getOrderById);  // GET /api/admin/orders/:id
 router.put('/orders/:id/status', updateOrderStatus);  // PUT /api/admin/orders/:id/status
 router.post('/orders/:id/resend-email', resendOrderEmail);  // POST /api/admin/orders/:id/resend-email
+router.get('/resellers/pending', getPendingResellers);
+router.put('/resellers/:id/status', updateResellerStatus);
 
 // Users
 router.get('/users', getAllUsers);  // GET /api/admin/users

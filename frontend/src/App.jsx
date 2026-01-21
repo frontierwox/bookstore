@@ -11,6 +11,10 @@ import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ResellerRegister from './pages/RegisterReseller';
+import ResellerDashboard from './pages/ResellerDashboard';
+import ResellerCart from './pages/ResellerCart'; // <--- IMPORT THIS
+import ResellerCatalog from './pages/ResellerCatalog'; // <--- IMPORT THIS (If you added the catalog page)
 import OrderHistory from './pages/OrderHistory';
 import OrderDetails from './pages/OrderDetails';
 import Profile from './pages/Profile';
@@ -30,6 +34,7 @@ import StockControl from './admin/StockControl';
 import AdminProductForm from './admin/AdminProductForm';
 import AdminOrderDetails from './admin/AdminOrderDetails';
 import AdminCouponManager from './admin/AdminCouponManager';
+import AdminResellers from './admin/AdminResellers';
 
 function App() {
   const appName = import.meta.env.VITE_APP_NAME || 'Sri Sai Saree';
@@ -49,15 +54,18 @@ function App() {
                 <Navbar appName={appName} />
                 <main className="main-content">
                   <Routes>
-                    {/* Public Routes */}
+                    {/* --- Public Routes --- */}
                     <Route path="/" element={<Home />} />
                     <Route path="/products" element={<ProductListing />} />
                     <Route path="/products/:id" element={<ProductDetails />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
+                    <Route path="/reseller/register" element={<ResellerRegister />} />
+                    
+                    {/* Regular User Cart */}
                     <Route path="/cart" element={<Cart />} />
 
-                    {/* Protected User Routes */}
+                    {/* --- Protected User Routes --- */}
                     <Route
                       path="/checkout"
                       element={
@@ -99,10 +107,34 @@ function App() {
                       }
                     />
 
-                    {/* Admin Routes */}
-                    <Route path="/login" element={<Login />} />
-                    
-                    {/* Admin protected routes with layout */}
+                    {/* --- RESELLER ROUTES (Fixes 404) --- */}
+                    <Route
+                      path="/reseller/dashboard"
+                      element={
+                        <ProtectedRoute>
+                          <ResellerDashboard />
+                        </ProtectedRoute>
+                      }
+                    />
+                    {/* ✅ THIS WAS MISSING: */}
+                    <Route
+                      path="/reseller/cart"
+                      element={
+                        <ProtectedRoute>
+                          <ResellerCart />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/reseller/catalog"
+                      element={
+                        <ProtectedRoute>
+                          <ResellerCatalog />
+                        </ProtectedRoute>
+                      }
+                    />
+
+                    {/* --- Admin Routes --- */}
                     <Route
                       path="/admin"
                       element={
@@ -121,10 +153,11 @@ function App() {
                       <Route path="analytics" element={<SalesAnalyticsDashboard />} />
                       <Route path="orders" element={<OrderManagement />} />
                       <Route path="orders/:id" element={<AdminOrderDetails />} />
+                      <Route path="resellers" element={<AdminResellers />} />
                       <Route path="stock" element={<StockControl />} />
                     </Route>
 
-                    {/* 404 Route */}
+                    {/* --- Fallback Route --- */}
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                 </main>

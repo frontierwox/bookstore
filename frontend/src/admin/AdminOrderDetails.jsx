@@ -3,7 +3,8 @@ import { Link, useParams } from 'react-router-dom';
 import { 
   ArrowLeft, Printer, Mail, Truck, MapPin, 
   User, CreditCard, Calendar, ChevronDown, CheckCircle, 
-  AlertTriangle, Loader2, Package, ShieldCheck, Ticket
+  AlertTriangle, Loader2, Package, ShieldCheck, Ticket, FileText, 
+  Copy, ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { adminApi } from '../services/admin';
@@ -91,6 +92,11 @@ const AdminOrderDetails = () => {
   const formatPrice = (price) => 
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price || 0);
 
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Copied to clipboard");
+  };
+
   const getMapUrl = () => {
     if (!order?.shippingAddress) return '#';
     const query = `${order.shippingAddress.address}, ${order.shippingAddress.city}, ${order.shippingAddress.pincode}`;
@@ -101,7 +107,7 @@ const AdminOrderDetails = () => {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-10 h-10 text-rose-600 animate-spin mb-4" />
+        <Loader2 className="w-10 h-10 text-indigo-600 animate-spin mb-4" />
         <p className="text-slate-500 font-medium">Loading details...</p>
       </div>
     );
@@ -116,7 +122,6 @@ const AdminOrderDetails = () => {
             <AlertTriangle size={32} />
           </div>
           <h3 className="text-xl font-bold text-slate-900 mb-2">Order Not Found</h3>
-          <p className="text-slate-500 mb-6">The order ID provided does not exist or has been deleted.</p>
           <Link to="/admin/orders" className="inline-flex items-center justify-center px-6 py-2.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors w-full font-medium">
             <ArrowLeft className="w-4 h-4 mr-2" /> Back to Orders
           </Link>
@@ -188,7 +193,7 @@ const AdminOrderDetails = () => {
                             w-full text-left px-3 py-2 text-sm rounded-lg transition-colors flex items-center justify-between
                             ${order.status === status.toLowerCase() 
                               ? 'bg-slate-50 text-slate-400 cursor-default' 
-                              : 'text-slate-700 hover:bg-slate-50 hover:text-rose-600'}
+                              : 'text-slate-700 hover:bg-slate-50 hover:text-indigo-600'}
                           `}
                         >
                           {status}
@@ -218,103 +223,127 @@ const AdminOrderDetails = () => {
                   {order.items.length} Items
                 </span>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
-                    <tr>
-                      <th className="px-6 py-3 w-1/2">Product</th>
-                      <th className="px-6 py-3 text-center">Price</th>
-                      <th className="px-6 py-3 text-center">Qty</th>
-                      <th className="px-6 py-3 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {order.items.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="font-medium text-slate-900">{item.name}</div>
-                          <div className="text-slate-500 text-xs mt-1 flex gap-2">
-                            {item.selectedSize && <span className="inline-block bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">Size: {item.selectedSize}</span>}
-                            {item.selectedColor && <span className="inline-block bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">Color: {item.selectedColor}</span>}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-center text-slate-600">{formatPrice(item.price)}</td>
-                        <td className="px-6 py-4 text-center text-slate-600 font-mono">{item.quantity}</td>
-                        <td className="px-6 py-4 text-right font-medium text-slate-900">{formatPrice(item.price * item.quantity)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              
-              {/* Financial Totals Section */}
-              <div className="px-6 py-5 bg-slate-50/30 border-t border-slate-100">
-                <div className="max-w-xs ml-auto space-y-2.5 text-sm">
-                  
-                  {/* Base Subtotal (Sticker Price) */}
-                  <div className="flex justify-between text-slate-500">
-                    <span>Subtotal</span>
-                    <span className="font-medium text-slate-700">{formatPrice(order.originalSubtotal || order.subtotal)}</span>
-                  </div>
-
-                  {/* Product Discounts (e.g. Sale Price) */}
-                  {(order.discountApplied > 0 || order.discount > 0) && (
-                    <div className="flex justify-between text-emerald-600 bg-emerald-50/50 px-2 py-1 rounded -mx-2">
-                      <span>Product Disc.</span>
-                      <span>-{formatPrice(order.discountApplied || order.discount)}</span>
+              <div className="divide-y divide-slate-100">
+                {order.items.map((item, idx) => (
+                  <div key={idx} className="p-4 flex gap-4 hover:bg-slate-50/30 transition-colors">
+                    <div className="w-16 h-20 bg-slate-100 rounded-lg overflow-hidden border border-slate-200 shrink-0">
+                      <img 
+                        src={item.image || item.product?.images?.[0]?.url} 
+                        alt={item.name} 
+                        className="w-full h-full object-cover"
+                        onError={(e) => e.target.style.display = 'none'}
+                      />
                     </div>
-                  )}
-
-                  {/* Coupon Discounts */}
-                  {order.couponDiscount > 0 && (
-                    <div className="flex justify-between text-rose-600 bg-rose-50/50 px-2 py-1 rounded -mx-2">
-                      <span className="flex items-center gap-1.5">
-                        <Ticket size={14} />
-                        <span>Coupon ({order.couponDetails?.code})</span>
-                      </span>
-                      <span>-{formatPrice(order.couponDiscount)}</span>
+                    <div className="flex-1">
+                      <p className="font-bold text-slate-900 text-sm">{item.name}</p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Size: {item.selectedSize} | Color: {item.selectedColor}
+                      </p>
+                      <div className="flex justify-between items-end mt-2">
+                        <span className="text-xs font-mono bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-slate-600">
+                          x{item.quantity}
+                        </span>
+                        <span className="font-medium text-slate-900 text-sm">
+                          {formatPrice(item.price * item.quantity)}
+                        </span>
+                      </div>
                     </div>
-                  )}
-
-                  {/* Shipping */}
-                  <div className="flex justify-between text-slate-600">
-                    <span>Shipping</span>
-                    <span>{order.shippingCost === 0 ? 'Free' : formatPrice(order.shippingCost)}</span>
                   </div>
-
-                  {/* Tax */}
-                  <div className="flex justify-between text-slate-600">
-                     <span>Tax (GST)</span>
-                     <span>{formatPrice(order.tax)}</span>
-                  </div>
-                  
-                  {/* Final Total */}
-                  <div className="flex justify-between text-lg font-bold text-slate-900 pt-3 border-t border-slate-200 mt-2">
-                    <span>Total Amount</span>
-                    <span>{formatPrice(order.totalAmount)}</span>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
-            {/* Email Actions (Hidden in Print) */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print:hidden">
-              <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                <Mail size={20} className="text-slate-400" /> Email Notifications
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <EmailButton 
-                  label="Order Confirmation" 
-                  onClick={() => requestAction('email', 'confirmation')} 
-                />
-                <EmailButton 
-                  label="Shipping Update" 
-                  onClick={() => requestAction('email', 'shipped')} 
-                />
-                <EmailButton 
-                  label="Delivery Update" 
-                  onClick={() => requestAction('email', 'delivered')} 
-                />
+            {/* ✅ DETAILED TRANSACTION BOX */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100 bg-indigo-50/50 flex justify-between items-center">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                  <FileText size={18} className="text-indigo-600"/> Payment Transaction Log
+                </h3>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide border ${
+                  order.paymentStatus === 'completed' || order.paymentStatus === 'paid' 
+                    ? 'bg-emerald-100 text-emerald-700 border-emerald-200' 
+                    : 'bg-amber-100 text-amber-700 border-amber-200'
+                }`}>
+                  {order.paymentStatus}
+                </span>
+              </div>
+              
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 text-sm">
+                
+                {/* Payer Info */}
+                <div>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Payer Details</p>
+                  <div className="space-y-1">
+                    <p className="font-bold text-slate-900">{order.user?.name || order.shippingAddress?.name}</p>
+                    <p className="text-slate-500 flex items-center gap-2">
+                      <Mail size={12} /> {order.customerEmail}
+                    </p>
+                    <p className="text-slate-500 flex items-center gap-2">
+                      <User size={12} /> {order.customerPhone}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Method Info */}
+                <div>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Payment Method</p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <CreditCard size={16} className="text-slate-700"/>
+                    <span className="font-bold text-slate-900">Online (Razorpay)</span>
+                  </div>
+                  <p className="text-slate-500">Amount: <span className="font-mono text-slate-900 font-medium">{formatPrice(order.totalAmount)}</span></p>
+                </div>
+
+                {/* Gateway Details Row */}
+                <div className="md:col-span-2 border-t border-slate-100 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  
+                  {/* Gateway Order ID */}
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 group relative">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Gateway Order ID</p>
+                    <div className="flex justify-between items-center">
+                      <p className="font-mono text-slate-700 text-xs truncate pr-2">
+                        {order.paymentDetails?.razorpayOrderId || 'N/A'}
+                      </p>
+                      {order.paymentDetails?.razorpayOrderId && (
+                        <button onClick={() => copyToClipboard(order.paymentDetails.razorpayOrderId)} className="text-slate-400 hover:text-indigo-600 transition-colors">
+                          <Copy size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Gateway Payment ID */}
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 group relative">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Gateway Payment ID</p>
+                    <div className="flex justify-between items-center">
+                      <p className="font-mono text-slate-700 text-xs truncate pr-2">
+                        {order.paymentDetails?.razorpayPaymentId || 'N/A'}
+                      </p>
+                      {order.paymentDetails?.razorpayPaymentId && (
+                        <button onClick={() => copyToClipboard(order.paymentDetails.razorpayPaymentId)} className="text-slate-400 hover:text-indigo-600 transition-colors">
+                          <Copy size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Signature Hash */}
+                  {order.paymentDetails?.razorpaySignature && (
+                    <div className="md:col-span-2 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Signature Hash (Verification)</p>
+                      <p className="font-mono text-[10px] text-slate-500 break-all select-all">
+                        {order.paymentDetails.razorpaySignature}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Internal ID */}
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Internal Order ID</p>
+                    <p className="font-mono text-xs text-slate-500">{order._id}</p>
+                  </div>
+
+                </div>
               </div>
             </div>
 
@@ -323,20 +352,24 @@ const AdminOrderDetails = () => {
           {/* --- RIGHT COLUMN (Sidebar Info) --- */}
           <div className="space-y-6 print:mt-6 print:grid print:grid-cols-2 print:gap-6 print:space-y-0">
             
-            {/* Customer Details */}
+            {/* Customer Card */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print:shadow-none print:border">
               <h3 className="font-semibold text-slate-900 mb-4 pb-3 border-b border-slate-50 flex items-center justify-between">
                 <span>Customer</span>
                 <User size={18} className="text-slate-300" />
               </h3>
               <div className="flex gap-4">
-                 <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
-                   <User size={18} />
+                 <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 font-bold text-sm border border-indigo-100">
+                   {(order.shippingAddress.name || 'U').charAt(0)}
                  </div>
                  <div className="overflow-hidden">
-                   <p className="font-medium text-slate-900 truncate">{order.shippingAddress?.name || order.user?.name || 'Guest User'}</p>
-                   <p className="text-rose-600 text-sm hover:underline cursor-pointer truncate">{order.customerEmail}</p>
-                   <p className="text-slate-500 text-sm mt-1">{order.customerPhone || 'No Phone Provided'}</p>
+                   <p className="font-medium text-slate-900 truncate">{order.shippingAddress?.name}</p>
+                   <a href={`mailto:${order.customerEmail}`} className="text-indigo-600 text-sm hover:underline cursor-pointer truncate block mt-0.5">
+                     {order.customerEmail}
+                   </a>
+                   <a href={`tel:${order.customerPhone}`} className="text-slate-500 text-sm mt-0.5 hover:text-slate-800 block">
+                     {order.customerPhone}
+                   </a>
                  </div>
               </div>
             </div>
@@ -355,52 +388,26 @@ const AdminOrderDetails = () => {
                  <p className="text-xs text-slate-400 mt-2 uppercase tracking-wide font-bold">India</p>
                </div>
                
-               {/* Map Link */}
                <a 
                  href={getMapUrl()}
                  target="_blank"
                  rel="noreferrer"
-                 className="inline-flex items-center gap-1.5 text-xs text-rose-600 font-semibold mt-4 hover:underline print:hidden"
+                 className="inline-flex items-center gap-1.5 text-xs text-indigo-600 font-semibold mt-4 hover:underline print:hidden bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors hover:bg-indigo-100"
                >
-                 <MapPin size={14} /> Open in Maps
+                 <MapPin size={14} /> View on Map <ExternalLink size={10} />
                </a>
             </div>
 
-            {/* Payment Info */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print:shadow-none print:border print:col-span-2">
-               <h3 className="font-semibold text-slate-900 mb-4 pb-3 border-b border-slate-50 flex items-center justify-between">
-                 <span>Payment Details</span>
-                 <ShieldCheck size={18} className="text-slate-300" />
-               </h3>
-               <div className="space-y-4">
-                 <div className="flex justify-between text-sm items-center">
-                   <span className="text-slate-500">Method</span>
-                   <div className="flex items-center gap-2">
-                     <CreditCard size={14} className="text-slate-400" />
-                     <span className="font-medium text-slate-900 uppercase">{order.paymentMethod}</span>
-                   </div>
-                 </div>
-                 <div className="flex justify-between text-sm items-center">
-                   <span className="text-slate-500">Status</span>
-                   <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ring-1 ring-inset ${
-                     order.paymentStatus === 'paid' || order.paymentStatus === 'completed'
-                      ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' 
-                      : order.paymentStatus === 'failed' 
-                        ? 'bg-red-50 text-red-700 ring-red-200' 
-                        : 'bg-amber-50 text-amber-700 ring-amber-200'
-                   }`}>
-                     {order.paymentStatus}
-                   </span>
-                 </div>
-                 {order.paymentDetails?.transactionId && (
-                   <div className="pt-3 border-t border-slate-50">
-                     <p className="text-xs text-slate-400 mb-1.5">Transaction ID</p>
-                     <p className="text-xs font-mono bg-slate-50 px-2 py-1.5 rounded text-slate-600 break-all border border-slate-200 select-all">
-                       {order.paymentDetails.transactionId}
-                     </p>
-                   </div>
-                 )}
-               </div>
+            {/* Email Actions */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print:hidden">
+              <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                <Mail size={18} className="text-slate-400" /> Notifications
+              </h3>
+              <div className="flex flex-col gap-2">
+                <EmailButton label="Resend Confirmation" onClick={() => requestAction('email', 'confirmation')} />
+                <EmailButton label="Resend Shipping Alert" onClick={() => requestAction('email', 'shipped')} />
+                <EmailButton label="Resend Delivery Alert" onClick={() => requestAction('email', 'delivered')} />
+              </div>
             </div>
 
           </div>
@@ -432,7 +439,7 @@ const AdminOrderDetails = () => {
                 <div className="text-slate-600 text-sm mb-6 leading-relaxed">
                   {confirmation.type === 'status' ? (
                     <>
-                      Are you sure you want to change this order status from <span className="font-semibold text-slate-900 uppercase">{order.status}</span> to <span className="font-bold text-rose-600 uppercase">{confirmation.data}</span>? This will notify the customer.
+                      Are you sure you want to change this order status from <span className="font-semibold text-slate-900 uppercase">{order.status}</span> to <span className="font-bold text-indigo-600 uppercase">{confirmation.data}</span>?
                     </>
                   ) : (
                     <>
@@ -455,7 +462,7 @@ const AdminOrderDetails = () => {
                     className="flex items-center gap-2 px-5 py-2 bg-slate-900 text-white font-medium rounded-lg hover:bg-slate-800 transition-colors shadow-lg shadow-slate-900/20 disabled:opacity-70 disabled:cursor-wait"
                   >
                     {confirmation.isLoading && <Loader2 size={16} className="animate-spin" />}
-                    {confirmation.type === 'status' ? 'Confirm Update' : 'Send Email'}
+                    {confirmation.type === 'status' ? 'Confirm' : 'Send'}
                   </button>
                 </div>
               </div>
@@ -494,10 +501,10 @@ const StatusBadge = ({ status, size = 'normal' }) => {
 const EmailButton = ({ label, onClick }) => (
   <button 
     onClick={onClick}
-    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-white hover:border-slate-300 hover:text-slate-900 hover:shadow-sm transition-all active:scale-[0.98]"
+    className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-white hover:border-indigo-200 hover:text-indigo-600 transition-all active:scale-[0.98] group"
   >
-    <Mail size={16} />
     {label}
+    <Mail size={14} className="text-slate-400 group-hover:text-indigo-500" />
   </button>
 );
 
