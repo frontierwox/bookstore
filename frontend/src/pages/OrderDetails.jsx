@@ -58,7 +58,7 @@ const OrderDetails = () => {
   if (item.image) {
     // If it's a MongoDB ObjectId → serve via API
     if (/^[a-f\d]{24}$/i.test(item.image)) {
-      return `/api/images/${item.image}`;
+      return `${import.meta.env.VITE_API_URL}/api/images/${item.image}`;
     }
     // Otherwise assume it's a normal URL
     return item.image;
@@ -67,7 +67,7 @@ const OrderDetails = () => {
   // 2. Fallback to populated product images
   const images = item.product?.images;
   if (images && images.length > 0) {
-    if (images[0].imageId) return `/api/images/${images[0].imageId}`;
+    if (images[0].imageId) return `${import.meta.env.VITE_API_URL}/api/images/${images[0].imageId}`;
     if (images[0].url) return images[0].url;
   }
 

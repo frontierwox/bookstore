@@ -179,7 +179,7 @@ const ProductDetails = () => {
               <div className="main-image-wrapper" onClick={() => setShowImageZoom(true)}>
                 {product.images?.[selectedImage]?.imageId ? (
                   <img 
-                    src={`/api/images/${product.images[selectedImage].imageId}`} 
+                    src={`${import.meta.env.VITE_API_URL}/api/images/${product.images[selectedImage].imageId}`} 
                     alt={product.images[selectedImage].alt || product.name}
                     className="main-image"
                   />
@@ -201,7 +201,7 @@ const ProductDetails = () => {
                       onMouseEnter={() => setSelectedImage(idx)}
                       onClick={() => setSelectedImage(idx)}
                     >
-                      <img src={`/api/images/${img.imageId}`} alt={`View ${idx + 1}`} />
+                      <img src={`${import.meta.env.VITE_API_URL}/api/images/${img.imageId}`} alt={`View ${idx + 1}`} />
                     </div>
                   ))}
                 </div>
@@ -213,7 +213,7 @@ const ProductDetails = () => {
               <div className="mobile-slider" ref={mobileGalleryRef} onScroll={handleMobileScroll}>
                 {product.images?.length > 0 ? product.images.map((img, idx) => (
                   <div key={idx} className="mobile-slide" onClick={() => setShowImageZoom(true)}>
-                   <img src={`/api/images/${img.imageId}`} alt={img.alt || product.name} />
+                   <img src={`${import.meta.env.VITE_API_URL}/api/images/${img.imageId}`} alt={img.alt || product.name} />
                   </div>
                 )) : (
                   <div className="mobile-slide placeholder">
@@ -408,7 +408,7 @@ const ProductDetails = () => {
             <button className="zoom-close"><MdClose size={24} /></button>
             <motion.img 
               initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
-              src={`/api/images/${product.images[selectedImage].imageId}`}
+              src={`${import.meta.env.VITE_API_URL}/api/images/${product.images[selectedImage].imageId}`}
               alt="Zoomed" 
               onClick={e => e.stopPropagation()} 
             />

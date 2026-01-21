@@ -69,7 +69,7 @@ const OrderHistory = () => {
     // 2. Check populated product images
     const images = item.product?.images;
     if (images && images.length > 0) {
-      if (images[0].imageId) return `/api/images/${images[0].imageId}`;
+      if (images[0].imageId) return `${import.meta.env.VITE_API_URL}/api/images/${images[0].imageId}`;
       if (images[0].url) return images[0].url;
     }
     return '/placeholder.jpg';

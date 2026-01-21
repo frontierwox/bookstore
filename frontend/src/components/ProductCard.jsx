@@ -16,7 +16,7 @@ const ProductCard = ({ product }) => {
   }).format(price)
 
   const imageSrc = product.images?.[0]?.imageId 
-    ? `/api/images/${product.images[0].imageId}` 
+    ? `${import.meta.env.VITE_API_URL}/api/images/${product.images[0].imageId}` 
     : product.images?.[0]?.url || '/placeholder.png';
 
   return (

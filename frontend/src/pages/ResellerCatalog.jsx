@@ -281,7 +281,7 @@ const ResellerProductCard = ({ product, viewMode, onQuickView, formatPrice }) =>
 
   // Get image URL
   const imageUrl = product.images?.[0]?.imageId 
-    ? `/api/images/${product.images[0].imageId}` 
+    ? `${import.meta.env.VITE_API_URL}/api/images/${product.images[0].imageId}` 
     : product.images?.[0]?.url || '/placeholder.jpg'
 
   // LIST VIEW
@@ -449,7 +449,7 @@ const QuickViewModal = ({ product, onClose, onAddToCart, formatPrice }) => {
 
   // Get image URL
   const imageUrl = product.images?.[0]?.imageId 
-    ? `/api/images/${product.images[0].imageId}` 
+    ? `${import.meta.env.VITE_API_URL}/api/images/${product.images[0].imageId}` 
     : product.images?.[0]?.url || '/placeholder.jpg'
 
   const handleAdd = async () => {
