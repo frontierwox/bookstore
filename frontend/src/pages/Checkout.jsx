@@ -169,49 +169,65 @@ const Checkout = () => {
       });
 
       const options = {
-        key: rpOrderData.key,
-        amount: rpOrderData.amount,
-        currency: rpOrderData.currency,
-        name: isReseller ? "Wholesale Portal" : "Shri Sai Collections",
-        description: `Order #${newOrder.orderNumber}`,
-        order_id: rpOrderData.id,
-        prefill: {
-          name: shippingAddress.name,
-          email: user.email,
-          contact: shippingAddress.phone
-        },
-        theme: { color: isReseller ? '#4f46e5' : '#e11d48' },
-        handler: async function (response) {
-          const loadingToast = toast.loading('Verifying secure payment...');
-          try {
-            await paymentApi.verifyPayment({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              orderId: newOrder._id
-            });
-            
-            toast.dismiss(loadingToast);
-            toast.success('Payment Successful!');
-            navigate(`/orders/${newOrder._id}`, { state: { success: true } });
-          } catch (err) {
-            toast.dismiss(loadingToast);
-            console.error("Verification Error:", err);
-            toast.error('Payment verification failed. Support has been notified.');
-            navigate(`/orders/${newOrder._id}`);
-          }
-        },
-        modal: {
-          ondismiss: function() {
-            toast('Payment cancelled', { icon: '⚠️' });
-            setPlacingOrder(false);
-            navigate(`/orders/${newOrder._id}`);
-          }
-        }
-      };
+  key: rpOrderData.key,
+  amount: rpOrderData.amount,
+  currency: rpOrderData.currency,
+  name: "Shri Sai Collections",
+  description: `Order #${newOrder.orderNumber}`,
+  order_id: rpOrderData.id,
 
-      const rzp = new window.Razorpay(options);
-      rzp.open();
+  method: {
+    upi: true,
+    card: true,
+    netbanking: true,
+    wallet: true
+  },
+
+  timeout: 300,
+
+  prefill: {
+    name: shippingAddress.name,
+    email: user.email,
+    contact: shippingAddress.phone
+  },
+
+  theme: { color: '#e11d48' },
+
+  handler: async function (response) {
+    const loadingToast = toast.loading('Verifying payment...');
+    try {
+      await paymentApi.verifyPayment({
+        razorpay_order_id: response.razorpay_order_id,
+        razorpay_payment_id: response.razorpay_payment_id,
+        razorpay_signature: response.razorpay_signature,
+        orderId: newOrder._id
+      });
+      toast.dismiss(loadingToast);
+      toast.success('Payment Successful');
+      navigate(`/orders/${newOrder._id}`, { state: { success: true } });
+    } catch (err) {
+      toast.dismiss(loadingToast);
+      toast.error('Verification failed');
+      navigate(`/orders/${newOrder._id}`);
+    }
+  },
+
+  modal: {
+    ondismiss: () => {
+      toast('Payment cancelled');
+      navigate(`/orders/${newOrder._id}`);
+    }
+  }
+};
+
+const rzp = new window.Razorpay(options);
+
+rzp.on('payment.failed', function (response) {
+  console.error(response.error);
+  toast.error(response.error.description || 'Payment failed');
+});
+
+rzp.open();
 
     } catch (error) {
       console.error('Error placing order:', error)

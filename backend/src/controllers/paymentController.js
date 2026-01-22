@@ -65,6 +65,7 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
     orderId 
   } = req.body;
 
+  // 1. Basic Validation
   if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !orderId) {
     throw new AppError(400, 'Missing payment verification details');
   }
@@ -72,49 +73,66 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
   const order = await Order.findById(orderId).populate('user', 'name email');
   if (!order) throw new AppError(404, 'Order not found');
 
-  // 1. Verify Signature (HMAC SHA256)
+  // 2. Verify Signature (HMAC SHA256)
   const body = razorpay_order_id + "|" + razorpay_payment_id;
+  
+  // DEBUG LOGGING (Remove in Production)
+  console.log("--- Payment Verification Debug ---");
+  console.log("Received Order ID:", razorpay_order_id);
+  console.log("Received Payment ID:", razorpay_payment_id);
+  console.log("Using Secret Key (Last 4 chars):", process.env.RAZORPAY_KEY_SECRET ? process.env.RAZORPAY_KEY_SECRET.slice(-4) : "MISSING");
   
   const expectedSignature = crypto
     .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
     .update(body.toString())
     .digest('hex');
 
+  console.log("Expected Signature:", expectedSignature);
+  console.log("Received Signature:", razorpay_signature);
+  console.log("Match:", expectedSignature === razorpay_signature);
+  console.log("----------------------------------");
+
   const isAuthentic = expectedSignature === razorpay_signature;
 
   if (isAuthentic) {
-    // 2. Save Payment Record
-    const payment = await Payment.create({
-      order: order._id,
-      user: req.user._id,
-      amount: order.totalAmount,
-      paymentMethod: 'razorpay',
-      paymentStatus: 'completed',
-      razorpayDetails: {
-        orderId: razorpay_order_id,
-        paymentId: razorpay_payment_id,
-        signature: razorpay_signature
-      },
-      transactionId: razorpay_payment_id
-    });
+    // 3. Save Payment Record
+    // Check if payment already exists to prevent duplicates
+    let payment = await Payment.findOne({ transactionId: razorpay_payment_id });
+    
+    if (!payment) {
+      payment = await Payment.create({
+        order: order._id,
+        user: req.user._id,
+        amount: order.totalAmount,
+        paymentMethod: 'razorpay',
+        paymentStatus: 'completed',
+        razorpayDetails: {
+          orderId: razorpay_order_id,
+          paymentId: razorpay_payment_id,
+          signature: razorpay_signature
+        },
+        transactionId: razorpay_payment_id
+      });
+    }
 
-    // 3. Update Order Status
-    order.paymentStatus = 'completed'; // or 'paid'
-    order.status = 'processing'; // Move from pending to processing
+    // 4. Update Order Status
+    order.paymentStatus = 'completed'; 
+    order.status = 'processing'; 
     order.paymentDetails = {
       razorpayOrderId: razorpay_order_id,
       razorpayPaymentId: razorpay_payment_id,
       razorpaySignature: razorpay_signature,
-      transactionId: razorpay_payment_id
+      transactionId: razorpay_payment_id,
+      paymentDate: new Date() // Add date
     };
     
     await order.save();
 
-    // 4. Send Confirmation Emails
+    // 5. Send Confirmation Emails (Silent Fail)
     try {
-      await sendPaymentConfirmed(order);
-      // If admin notification wasn't sent on creation, send it now
-      // await sendAdminNotification(order); 
+      if (!order.emailNotifications?.confirmationSent) {
+        await sendPaymentConfirmed(order);
+      }
     } catch (emailErr) {
       console.error("Email Error:", emailErr);
     }
@@ -143,7 +161,6 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
     throw new AppError(400, 'Payment verification failed: Invalid Signature');
   }
 });
-
 // @desc    Initiate Cash on Delivery
 // @route   POST /api/payments/cod
 // @access  Private
