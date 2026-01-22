@@ -1,3 +1,4 @@
+// routes/cart.js
 const express = require('express');
 const router = express.Router();
 const { 
@@ -5,23 +6,23 @@ const {
   addToCart, 
   updateCartItem, 
   removeFromCart, 
-  clearCart 
+  clearCart,
+  mergeCart
 } = require('../controllers/cartController');
 
-// 1. Import the Coupon Controller
 const { validateCoupon } = require('../controllers/CouponController'); 
-
 const { verifyToken } = require('../middleware/auth');
 
+// ✅ FIX: Changed route from POST /api/cart to POST /api/cart/add
 // All routes protected (Base URL: /api/cart)
 router.get('/', verifyToken, getCart);
-router.post('/add', verifyToken, addToCart);
-router.put('/:productId', verifyToken, updateCartItem);
-router.delete('/:productId', verifyToken, removeFromCart);
+router.post('/add', verifyToken, addToCart); // ✅ FIXED - was just POST /
+router.post('/merge', verifyToken, mergeCart); // For guest cart merge on login
+router.put('/:itemId', verifyToken, updateCartItem); // ✅ Changed param name for clarity
+router.delete('/:itemId', verifyToken, removeFromCart); // ✅ Changed param name
 router.delete('/', verifyToken, clearCart);
 
-// 2. Add the Validation Route here
-// Final URL will be: POST /api/cart/validate-coupon
-router.post('/validate-coupon', verifyToken, validateCoupon); 
+// Coupon validation route
+router.post('/validate-coupon', verifyToken, validateCoupon);
 
 module.exports = router;

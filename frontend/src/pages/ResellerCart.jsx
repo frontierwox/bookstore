@@ -9,6 +9,7 @@ import { cartApi } from '../services/cart'
 import { AuthContext } from '../context/AuthContext'
 import CartSummary from '../components/CartSummary' 
 import toast from 'react-hot-toast'
+import { getImageUrl } from '../utils/getImageUrl'
 
 const ResellerCart = () => {
   const navigate = useNavigate()
@@ -17,16 +18,14 @@ const ResellerCart = () => {
   const [cart, setCart] = useState(null)
   const [loading, setLoading] = useState(true)
   
-  // Track specific items for optimistic UI loading states
   const [updatingItems, setUpdatingItems] = useState(new Set())
   const [removingId, setRemovingId] = useState(null)
   const [appliedCoupon, setAppliedCoupon] = useState(null)
 
-  // --- Initial Fetch ---
   useEffect(() => {
     if (user) {
       if (user.role !== 'reseller') {
-        navigate('/cart') // Redirect normal users
+        navigate('/cart')
         return
       }
       fetchCart()
@@ -39,7 +38,6 @@ const ResellerCart = () => {
     try {
       const data = await cartApi.getCart()
       setCart(data.cart)
-      // Coupons are generally not for resellers, but keeping logic just in case
       if (data.cart?.appliedCoupon) {
         setAppliedCoupon(data.cart.appliedCoupon)
       }
@@ -51,45 +49,38 @@ const ResellerCart = () => {
     }
   }
 
-  // --- Optimized Quantity Logic ---
   const handleQuantityChange = async (item, newQuantity) => {
     if (newQuantity < 1) return
     if (updatingItems.has(item._id)) return;
 
-    // 1. Optimistic Update Calculation
-    const oldCart = JSON.parse(JSON.stringify(cart)) // Deep copy for revert
+    const oldCart = JSON.parse(JSON.stringify(cart))
     const updatedItems = cart.items.map(i => 
       i._id === item._id ? { ...i, quantity: newQuantity } : i
     )
     
-    // Estimate new totals locally to prevent UI flicker
     const newSubtotal = updatedItems.reduce((acc, curr) => acc + (curr.price * curr.quantity), 0)
-    // Assume shipping/tax stay roughly same for optimistic UI (will auto-correct on API response)
     const estimatedTotal = newSubtotal + (cart.totalShipping || 0) + (cart.totalTax || 0)
 
-    setCart({ 
-      ...cart, 
-      items: updatedItems, 
-      subtotal: newSubtotal,
-      totalAmount: estimatedTotal 
-    })
+   setCart(prev => ({
+  ...prev,
+  items: updatedItems
+}))
     
     setUpdatingItems(prev => new Set(prev).add(item._id))
 
     try {
-      // Use Product ID specifically if available, else Item ID
-      const targetId = item.product?._id || item._id; 
-      const data = await cartApi.updateCartItem(targetId, newQuantity)
+      // ✅ FIX: Use cart line item _id directly
+      const data = await cartApi.updateCartItem(item._id, newQuantity)
       
       if (data.success) {
-        setCart(data.cart) // Sync exact values from backend (Tax/Shipping recalcs)
+        setCart(data.cart)
       } else {
         throw new Error('Update failed')
       }
     } catch (error) {
       console.error('Error updating quantity:', error)
-      setCart(oldCart) // Revert on error
-      toast.error("Update failed")
+      setCart(oldCart)
+      toast.error(error.response?.data?.message || "Update failed")
     } finally {
       setUpdatingItems(prev => {
         const next = new Set(prev)
@@ -100,14 +91,13 @@ const ResellerCart = () => {
   }
 
   const handleRemoveItem = async (itemId) => {
+    // ✅ FIX: itemId is already the cart line item _id
     if (removingId) return;
     setRemovingId(itemId)
 
     try {
-      const itemToRemove = cart.items.find(i => i._id === itemId);
-      const targetId = itemToRemove?.product?._id || itemId;
-
-      const data = await cartApi.removeFromCart(targetId)
+      // ✅ Use the line item _id directly
+      const data = await cartApi.removeFromCart(itemId)
       
       if (data.success) {
         setCart(data.cart)
@@ -115,7 +105,7 @@ const ResellerCart = () => {
       }
     } catch (error) {
       console.error('Error removing item:', error)
-      toast.error("Failed to remove item")
+      toast.error(error.response?.data?.message || "Failed to remove item")
     } finally {
       setRemovingId(null)
     }
@@ -137,15 +127,8 @@ const ResellerCart = () => {
     navigate('/checkout')
   }
 
-  // --- Helper: Get Image URL Correctly ---
   const getProductImage = (item) => {
-    const images = item.product?.images;
-    if (images && images.length > 0) {
-      // Prioritize imageId for GridFS, fallback to url
-      if (images[0].imageId) return `${import.meta.env.VITE_API_URL}/api/images/${images[0].imageId}`;
-      if (images[0].url) return images[0].url;
-    }
-    return '/placeholder.jpg'; 
+    return getImageUrl(item.product?.images?.[0]);
   }
 
   const formatPrice = (price) => {
@@ -154,7 +137,6 @@ const ResellerCart = () => {
     }).format(price)
   }
 
-  // --- Loading State ---
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50">
@@ -164,7 +146,6 @@ const ResellerCart = () => {
     )
   }
 
-  // --- Empty State ---
   if (!cart || !cart.items || cart.items.length === 0) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50 p-4">
@@ -190,7 +171,6 @@ const ResellerCart = () => {
     <div className="min-h-screen bg-stone-50 py-8 px-4 md:px-8">
       <div className="max-w-7xl mx-auto">
         
-        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-100 rounded-lg text-indigo-700">
@@ -207,10 +187,8 @@ const ResellerCart = () => {
 
         <div className="flex flex-col lg:flex-row gap-8 relative">
           
-          {/* --- Left Column: Order Items --- */}
           <div className="w-full lg:w-2/3 space-y-4">
             
-            {/* Table Header (Desktop) */}
             <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 bg-white rounded-xl border border-slate-200 text-xs font-bold uppercase tracking-wider text-slate-500 shadow-sm">
               <div className="col-span-6">Product Details</div>
               <div className="col-span-3 text-center">Bulk Qty</div>
@@ -231,9 +209,7 @@ const ResellerCart = () => {
                 >
                   <div className="flex flex-col md:grid md:grid-cols-12 gap-4 items-center">
                     
-                    {/* Product Info */}
                     <div className="w-full md:col-span-6 flex gap-4">
-                      {/* Image */}
                       <div className="w-20 h-24 md:w-20 md:h-24 shrink-0 rounded-lg overflow-hidden bg-slate-100 relative border border-slate-100">
                         <img 
                           src={getProductImage(item)} 
@@ -248,7 +224,6 @@ const ResellerCart = () => {
                         )}
                       </div>
                       
-                      {/* Details */}
                       <div className="flex flex-col justify-center flex-1 min-w-0">
                         <Link to={`/products/${item.product?._id}`} className="font-bold text-base text-slate-900 hover:text-indigo-600 truncate transition-colors">
                           {item.product?.name || "Unknown Product"}
@@ -267,14 +242,12 @@ const ResellerCart = () => {
                           )}
                         </div>
 
-                        {/* Unit Price Display */}
                         <div className="mt-2 text-xs text-slate-500 font-medium flex items-center gap-1">
                           Unit Cost: <span className="text-slate-900 font-bold">{formatPrice(item.price)}</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Quantity Selector */}
                     <div className="w-full md:col-span-3 flex justify-between md:justify-center items-center mt-3 md:mt-0 pt-3 md:pt-0 border-t md:border-t-0 border-slate-50">
                       <span className="md:hidden text-xs font-bold text-slate-400">QTY</span>
                       <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 h-9">
@@ -295,17 +268,17 @@ const ResellerCart = () => {
                         </button>
                       </div>
                       
-                      {/* Mobile Remove */}
+                      {/* ✅ FIX: Pass item._id for mobile remove */}
                       <button onClick={() => handleRemoveItem(item._id)} className="md:hidden p-2 text-slate-400 hover:text-red-500">
                         <Trash2 size={18} />
                       </button>
                     </div>
 
-                    {/* Total Price & Remove Desktop */}
                     <div className="hidden md:flex md:col-span-3 flex-col justify-center items-end">
                       <div className="font-bold text-lg text-slate-900">
                         {formatPrice(item.price * item.quantity)}
                       </div>
+                      {/* ✅ FIX: Pass item._id directly */}
                       <button 
                         onClick={() => handleRemoveItem(item._id)}
                         disabled={removingId === item._id}
@@ -327,29 +300,25 @@ const ResellerCart = () => {
             </div>
           </div>
 
-          {/* --- Right Column: Financial Summary --- */}
           <div className="w-full lg:w-1/3">
             <div className="sticky top-24">
               
-              {/* Reseller specific header in summary */}
               <div className="bg-slate-900 text-white p-4 rounded-t-2xl flex items-center justify-between">
                 <span className="font-serif font-bold">Total Investment</span>
                 <TrendingUp size={18} className="text-emerald-400"/>
               </div>
 
-              {/* CartSummary with Prop Overrides if needed */}
               <div className="rounded-b-2xl border-x border-b border-slate-200 overflow-hidden">
                 <CartSummary 
                   cart={cart} 
                   onCheckout={handleCheckout}
                   formatPrice={formatPrice}
-                  onApplyCoupon={() => {}} // Resellers don't use coupons
+                  onApplyCoupon={() => {}}
                   appliedCoupon={null}
                   onRemoveCoupon={() => {}}
                 />
               </div>
 
-              {/* B2B Trust Badges */}
               <div className="mt-6 flex flex-col gap-3">
                 <div className="flex items-center gap-3 p-3 bg-white rounded-xl border border-slate-200 shadow-sm">
                   <ShieldCheck className="text-emerald-600 shrink-0" size={20} />

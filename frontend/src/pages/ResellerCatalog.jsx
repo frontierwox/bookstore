@@ -78,13 +78,13 @@ const ResellerCatalog = () => {
   const handleAddToCart = async (product, qty, selectedColor, selectedSize) => {
     try {
       const payload = {
-        product: product._id, 
-        quantity: qty,
-        selectedColor: selectedColor || '',
-        selectedSize: selectedSize || ''
-      }
+  product: product._id,
+  selectedColor,
+  selectedSize
+}
 
-      await cartApi.addToCart(payload)
+      await cartApi.addToCart(payload, qty)
+
       
       setToast({ 
         message: `Added ${qty} units to Wholesale Order`, 

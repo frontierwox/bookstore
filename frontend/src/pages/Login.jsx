@@ -99,7 +99,7 @@ const Login = () => {
             )}
           </AnimatePresence>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email Field */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 pl-1" htmlFor="email">
@@ -154,19 +154,6 @@ const Login = () => {
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
               </div>
-            </div>
-
-            {/* Remember Me */}
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="remember"
-                name="remember"
-                className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500/30 cursor-pointer"
-              />
-              <label htmlFor="remember" className="ml-2 text-sm text-slate-600 cursor-pointer select-none">
-                Remember me for 30 days
-              </label>
             </div>
 
             {/* Submit Button */}

@@ -35,10 +35,15 @@ const productSchema = new mongoose.Schema({
     min: [0, 'Price cannot be negative']
   },
   images: [{
-    url: String,
-    fileId: String, // GridFS ID
-    imageId: String // Alternative ID reference
-  }],
+  url: {
+    type: String,
+    required: true
+  },
+  publicId: {
+    type: String,
+    required: true
+  }
+}],
   sizes: {
   type: [String],
   default: [],

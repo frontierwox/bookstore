@@ -55,7 +55,6 @@ app.use('/api/cart', require('./routes/cart'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/admin', require('./routes/admin'));
-app.use('/api/images', require('./routes/imageRoutes'));
 
 // 404 handler - must come after all routes
 app.use(notFound);

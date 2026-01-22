@@ -20,7 +20,6 @@ const {
   deleteProduct,
   bulkUpdateStock,
   getLowStockProducts,
-  uploadImage,
   exportOrders,
   getRecentActivities,
   getAnalyticsOverview,
@@ -45,21 +44,7 @@ const {
 const { verifyToken, verifyAdmin } = require('../middleware/auth');
 const { validateProductInput } = require('../middleware/validation');
 const { getPendingResellers, updateResellerStatus } = require('../controllers/adminController');
-const multer = require('multer');
 
-const upload = multer({
-  storage: multer.memoryStorage(), // ✅ NO filesystem usage
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files allowed'), false);
-    }
-  },
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB
-  }
-});
 
 router.post('/login', adminLogin);
 
@@ -80,7 +65,6 @@ router.delete('/products/:id', deleteProduct);  // DELETE /api/admin/products/:i
 router.put('/products/stock', bulkUpdateStock);  // PUT /api/admin/products/stock
 router.get('/products/stock', getLowStockProducts);  // GET /api/admin/products/stock
 router.get('/products/low-stock', getLowStockProducts);  // GET /api/admin/products/low-stock (alias)
-router.post('/products/upload', upload.single('image'), uploadImage);  // POST /api/admin/products/upload
 
 // Product discount management
 router.put('/products/:id/discount', updateProductDiscount);  // PUT /api/admin/products/:id/discount

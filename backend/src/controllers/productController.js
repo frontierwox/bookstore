@@ -2,6 +2,7 @@ const Product = require('../models/Product');
 const { validationResult } = require('express-validator');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 const { PAGINATION, PRODUCT_CATEGORIES } = require('../config/constants');
+const cloudinary = require('../config/cloudinary');
 
 const formatProduct = (product) => {
   const discountActive = typeof product.isDiscountActive === 'function' ? product.isDiscountActive() : false;
@@ -217,70 +218,51 @@ exports.getProductsByCategory = asyncHandler(async (req, res) => {
 // @route   POST /api/products
 // @access  Private (Admin)
 exports.createProduct = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
-
-  const { removedImageIds, ...cleanBody } = req.body;
+  const {
+    images = [],   // ✅ FIXED
+    ...rest
+  } = req.body;
 
   const product = await Product.create({
-    ...cleanBody,
-    createdBy: req.user.id
+    ...rest,
+    images
   });
 
   res.status(201).json({
     success: true,
-    message: 'Product created successfully',
-    product: formatProduct(product)
+    product
   });
 });
-
 
 // @desc    Update product
 // @route   PUT /api/products/:id
 // @access  Private (Admin)
-exports.updateProduct = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new AppError(400, errors.array()[0].msg);
-  }
+// controllers/productController.js
 
+exports.updateProduct = asyncHandler(async (req, res) => {
   const product = await Product.findById(req.params.id);
-  if (!product) {
-    throw new AppError(404, 'Product not found');
-  }
+  if (!product) throw new AppError(404, 'Product not found');
 
   const {
-    removedImageIds,
-    images,
+    images = [],   // ✅ FIXED
     ...rest
   } = req.body;
 
-  // 1️⃣ Remove deleted images
-  if (Array.isArray(removedImageIds) && removedImageIds.length > 0) {
-    product.images = product.images.filter(
-      img => !removedImageIds.includes(img.imageId.toString())
-    );
-  }
-
-  // 2️⃣ Replace images with finalImages from frontend
+  // ✅ Set images safely
   if (Array.isArray(images)) {
     product.images = images;
   }
 
-  // 3️⃣ Update remaining fields safely
+  // Update other fields
   Object.keys(rest).forEach(key => {
     product[key] = rest[key];
   });
 
-  // 4️⃣ Save ONCE (triggers hooks, stock calc, validation)
   await product.save();
 
   res.json({
     success: true,
-    message: 'Product updated successfully',
-    product: formatProduct(product)
+    product
   });
 });
 

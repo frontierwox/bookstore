@@ -55,17 +55,10 @@ const ImageUploadArea = ({ images, onChange, maxImages = 5, maxSizeMB = 5 }) => 
   };
 
   const getPreview = (item) => {
-    if (typeof item === 'string' && item.startsWith('http')) {
-      return item;
-    }
-    if (typeof item === 'string') {
-      return `/api/images/${item}`;
-    }
-    if (item instanceof File || item instanceof Blob) {
-      return URL.createObjectURL(item);
-    }
-    return '/placeholder.png';
-  };
+  if (item?.url) return item.url;
+  if (item instanceof File) return URL.createObjectURL(item);
+  return '/placeholder.png';
+};
 
   useEffect(() => {
     return () => {
@@ -225,8 +218,6 @@ const AdminProductForm = ({ mode }) => {
     return Math.round((marginAmount / retail) * 100);
   }, [form.price, marginAmount]);
 
-  console.log('SIZES BEFORE SAVE:', form.sizes)
-
 
   // Load Data
   useEffect(() => {
@@ -254,7 +245,7 @@ wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
           variants: product.variants || [],
           sizes: Array.isArray(product.sizes) ? product.sizes : [],
           tags: Array.isArray(product.tags) ? product.tags : [],
-          images: product.images?.map(img => img.imageId || img.url) || [],
+          images: product.images || [],
           imageAlt: product.images?.[0]?.alt || ''
         });
       } catch (e) {
@@ -307,105 +298,121 @@ wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
     }));
   };
 
-  const uploadImageToMongo = async (file) => {
-    const formData = new FormData();
-    formData.append('image', file);
+    const uploadImageToCloudinary = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_PRESET);
 
-    try {
-      const res = await adminApi.uploadImage(formData);
-      if (res.imageId) return res.imageId;
-      throw new Error('Upload successful but no image ID returned');
-    } catch (error) {
-      console.error("Upload error:", error);
-      throw error;
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`,
+    {
+      method: 'POST',
+      body: formData
     }
+  );
+
+  if (!res.ok) {
+    throw new Error('Cloudinary upload failed');
+  }
+
+  const data = await res.json();
+
+  return {
+    url: data.secure_url,
+    publicId: data.public_id
   };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.name || !form.description || form.price === '' || !form.category) {
-      toast.error('Please fill in required fields');
-      return;
-    }
-    if (form.images.length === 0) {
-      toast.error('Please upload at least one image');
-      return;
-    }
-    if (form.variants.length === 0) {
-      toast.error('Please add at least one color variant');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      
-      const newFiles = form.images.filter(img => img instanceof File);
-      const existing = form.images.filter(img => typeof img === 'string'); 
-
-      let finalImages = [];
-
-      existing.forEach(img => {
-        if (removedImageIds.includes(img)) return;
-
-        if (img.startsWith('http')) {
-          finalImages.push({ url: img, alt: form.imageAlt || form.name });
-        } else {
-          finalImages.push({ imageId: img, alt: form.imageAlt || form.name });
-        }
-      });
-
-      for (const file of newFiles) {
-        const imageId = await uploadImageToMongo(file);
-        if (imageId) {
-          finalImages.push({
-            imageId: imageId,
-            alt: form.imageAlt || form.name
-          });
-        }
-      }
-
-      // ✅ UPDATED: Include new pricing fields
-      const payload = {
-  ...form,
-
-  price: Number(form.price),
-  wholesalePrice: Number(form.wholesalePrice) || 0,
-
-  retail: {
-    shippingCost: Number(form.retailShippingCost) || 0,
-    taxPercentage: Number(form.retailTaxPercentage) || 0
-  },
-
-  wholesale: {
-    shippingCost: Number(form.wholesaleShippingCost) || 0,
-    taxPercentage: Number(form.wholesaleTaxPercentage) || 0
-  },
-
-  stock: totalStock,
-  discountPercentage: Number(form.discountPercentage),
-  discountStartDate: form.discountStartDate || null,
-  discountEndDate: form.discountEndDate || null,
-  images: finalImages,
-  removedImageIds
 };
 
-      if (isEdit) {
-        await adminApi.updateProduct(id, payload);
-        toast.success('Product updated successfully');
-      } else {
-        const res = await adminApi.createProduct(payload);
-        toast.success('Product created successfully');
-        const newId = res.product?._id || res.data?._id || res._id;
-        if(newId) navigate(`/admin/products/${newId}/edit`); 
-        else navigate('/admin/products');
-      }
-    } catch (e) {
-      console.error(e);
-      toast.error('Save failed: ' + (e.message || 'Unknown error'));
-    } finally {
-      setLoading(false);
+
+  const handleSubmit = async (e) => {
+  e.preventDefault();
+
+  if (!form.name || !form.description || form.price === '' || !form.category) {
+    toast.error('Please fill in required fields');
+    return;
+  }
+
+  if (form.images.length === 0) {
+    toast.error('Please upload at least one image');
+    return;
+  }
+
+  if (form.variants.length === 0) {
+    toast.error('Please add at least one color variant');
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    // 🔹 Separate new files & existing images
+    const newFiles = form.images.filter(img => img instanceof File);
+    const existingImages = form.images.filter(img => img?.url);
+
+    // 🔹 Start with existing Cloudinary images
+    let finalImages = [...existingImages];
+
+    // 🔹 Upload new images to Cloudinary
+    for (const file of newFiles) {
+      const uploaded = await uploadImageToCloudinary(file);
+      finalImages.push(uploaded);
     }
-  };
+
+    // 🔹 Final payload (MATCHES PRODUCT SCHEMA EXACTLY)
+    const payload = {
+      name: form.name,
+      description: form.description,
+      category: form.category,
+      tags: form.tags,
+      sizes: form.sizes,
+      variants: form.variants,
+
+      price: Number(form.price),
+      wholesalePrice: Number(form.wholesalePrice) || 0,
+
+      retail: {
+        shippingCost: Number(form.retailShippingCost) || 0,
+        taxPercentage: Number(form.retailTaxPercentage) || 0
+      },
+
+      wholesale: {
+        shippingCost: Number(form.wholesaleShippingCost) || 0,
+        taxPercentage: Number(form.wholesaleTaxPercentage) || 0
+      },
+
+      stock: totalStock,
+
+      discountPercentage: Number(form.discountPercentage),
+      discountStartDate: form.discountStartDate || null,
+      discountEndDate: form.discountEndDate || null,
+
+      images: finalImages
+    };
+
+    if (isEdit) {
+      await adminApi.updateProduct(id, payload);
+      toast.success('Product updated successfully');
+    } else {
+      const res = await adminApi.createProduct(payload);
+      toast.success('Product created successfully');
+
+      const newId =
+        res?.product?._id ||
+        res?.data?._id ||
+        res?._id;
+
+      if (newId) navigate(`/admin/products/${newId}/edit`);
+      else navigate('/admin/products');
+    }
+
+  } catch (error) {
+    console.error(error);
+    toast.error('Save failed: ' + (error.message || 'Unknown error'));
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const inputClass = "w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 transition-all duration-200";
   const labelClass = "text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5 block";

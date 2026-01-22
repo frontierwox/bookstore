@@ -1,3 +1,4 @@
+// context/CartContext.jsx
 import React, { createContext, useState, useCallback, useEffect, useContext } from 'react';
 import { cartApi } from '../services/cart';
 import { AuthContext } from './AuthContext';
@@ -8,13 +9,11 @@ export const CartContext = createContext();
 export const CartProvider = ({ children }) => {
   const { user } = useContext(AuthContext);
   
-  // State
   const [cart, setCart] = useState({ items: [], totalAmount: 0, totalItems: 0 });
   const [loading, setLoading] = useState(false);
 
-  // --- Helper: Calculate Totals (For Guest/Optimistic updates) ---
+  // Helper: Calculate Totals for Guest Cart
   const calculateTotals = (items) => {
-    // Basic frontend calculation - actual tax/shipping will be updated by backend
     const totalAmount = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
     
@@ -23,15 +22,14 @@ export const CartProvider = ({ children }) => {
       totalAmount, 
       totalItems,
       subtotal: totalAmount,
-      totalTax: 0, // Frontend doesn't know tax rules, waits for backend
-      totalShipping: 0 // Frontend doesn't know shipping rules, waits for backend
+      totalTax: 0,
+      totalShipping: 0
     };
   };
 
-  // --- 1. Fetch Cart ---
+  // Fetch Cart
   const fetchCart = useCallback(async () => {
     if (user) {
-      // LOGGED IN: Fetch from API
       try {
         setLoading(true);
         const data = await cartApi.getCart();
@@ -42,7 +40,6 @@ export const CartProvider = ({ children }) => {
         setLoading(false);
       }
     } else {
-      // GUEST: Fetch from LocalStorage
       const saved = localStorage.getItem('guestCart');
       if (saved) {
         setCart(JSON.parse(saved));
@@ -52,7 +49,6 @@ export const CartProvider = ({ children }) => {
     }
   }, [user]);
 
-  // Sync on mount or user change
   useEffect(() => {
     fetchCart();
   }, [fetchCart]);
@@ -64,41 +60,40 @@ export const CartProvider = ({ children }) => {
     }
   }, [cart, user]);
 
-  // --- 2. Add to Cart ---
-  const addToCart = useCallback(async (product, quantity = 1, selectedSize = null, selectedColor = null) => {
-    // Determine selections
-    const size = selectedSize || product.selectedSize || product.sizes?.[0] || 'Free Size';
-    const color = selectedColor || product.selectedColor || product.colors?.[0] || 'Standard';
+  // ✅ FIX: Add to Cart - simplified payload structure
+  const addToCart = useCallback(async (productData, quantity = 1) => {
+    // Handle both direct calls and calls with embedded product object
+    const productId = productData.product || productData._id;
+    const size = productData.selectedSize || productData.sizes?.[0] || 'Free Size';
+    const color = productData.selectedColor || productData.colors?.[0] || 'Standard';
 
-    // ✅ FIX: Determine correct price based on User Role for Optimistic Update
     const isReseller = user?.role === 'reseller';
-    const priceToUse = (isReseller && product.wholesalePrice > 0) 
-      ? Number(product.wholesalePrice) 
-      : Number(product.price);
+    const priceToUse = (isReseller && productData.wholesalePrice > 0) 
+      ? Number(productData.wholesalePrice) 
+      : Number(productData.price);
 
-    // Payload for Backend
-    const itemPayload = {
-      product: product._id, // Key must be 'product'
+    // ✅ Correct payload structure matching backend expectations
+    const payload = {
+      product: productId,
       quantity,
       selectedSize: size,
       selectedColor: color
     };
 
     if (user) {
-      // >> LOGGED IN: API Call
       try {
-        const data = await cartApi.addToCart(itemPayload);
+        const data = await cartApi.addToCart(payload, quantity);
         setCart(data.cart);
         toast.success(isReseller ? 'Added to wholesale order' : 'Added to cart');
       } catch (error) {
-        console.error(error);
-        toast.error('Failed to add item');
+        console.error('Add to cart error:', error);
+        toast.error(error.response?.data?.message || 'Failed to add item');
       }
     } else {
-      // >> GUEST: Local State
+      // Guest cart logic
       setCart(prev => {
         const existingItemIndex = prev.items.findIndex(item => 
-          item.product._id === product._id && 
+          item.product._id === productId && 
           item.selectedColor === color &&
           item.selectedSize === size
         );
@@ -107,18 +102,16 @@ export const CartProvider = ({ children }) => {
         
         if (existingItemIndex > -1) {
           newItems[existingItemIndex].quantity += quantity;
-          // Update price in case it changed (though rare for guest)
           newItems[existingItemIndex].price = priceToUse;
         } else {
-          // Push new item structure matching backend response
           newItems.push({
-            _id: Date.now().toString(), // Temp ID
+            _id: Date.now().toString(),
             product: { 
-              ...product, 
-              _id: product._id 
+              ...productData, 
+              _id: productId 
             },
             quantity,
-            price: priceToUse, // ✅ Using correct determined price
+            price: priceToUse,
             selectedSize: size,
             selectedColor: color,
             shippingAmount: 0,
@@ -132,13 +125,12 @@ export const CartProvider = ({ children }) => {
     }
   }, [user]);
 
-  // --- 3. Update Quantity ---
+  // Update Quantity
   const updateQuantity = useCallback(async (cartItemId, quantity) => {
     if (quantity <= 0) return;
 
     if (user) {
       try {
-        // Backend recalculates price/tax/shipping
         const data = await cartApi.updateCartItem(cartItemId, quantity);
         setCart(data.cart);
       } catch (error) {
@@ -157,7 +149,7 @@ export const CartProvider = ({ children }) => {
     }
   }, [user]);
 
-  // --- 4. Remove Item ---
+  // Remove Item
   const removeFromCart = useCallback(async (cartItemId) => {
     if (user) {
       try {
@@ -179,7 +171,7 @@ export const CartProvider = ({ children }) => {
     }
   }, [user]);
 
-  // --- 5. Clear Cart ---
+  // Clear Cart
   const clearCart = useCallback(async () => {
     if (user) {
       try {

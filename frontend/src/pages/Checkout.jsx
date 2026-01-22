@@ -2,7 +2,7 @@ import { useState, useEffect, useContext, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { 
   MapPin, CreditCard, ShieldCheck, Lock, 
-  ChevronRight, Truck, Loader2, Building2, Info
+  ChevronRight, Loader2, Building2, AlertCircle
 } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { cartApi } from '../services/cart'
@@ -10,7 +10,7 @@ import { orderApi } from '../services/orders'
 import { paymentApi } from '../services/payments'
 import { AuthContext } from '../context/AuthContext'
 
-// --- Razorpay SDK Loader ---
+// --- Razorpay SDK Loader (Unchanged) ---
 const loadRazorpayScript = () => {
   return new Promise((resolve) => {
     if (window.Razorpay) {
@@ -35,10 +35,8 @@ const Checkout = () => {
   const [cart, setCart] = useState(null)
   const [loading, setLoading] = useState(true)
   const [placingOrder, setPlacingOrder] = useState(false)
-  const [selectedAddressIndex, setSelectedAddressIndex] = useState(null)
-  // ✅ Fixed to Razorpay only
-  const [paymentMethod] = useState('razorpay')
   
+  // ✅ Form State
   const [shippingAddress, setShippingAddress] = useState({
     name: user?.name || '',
     phone: user?.phone || '',
@@ -47,6 +45,10 @@ const Checkout = () => {
     state: '',
     pincode: ''
   })
+
+  // ✅ Error State for Validation
+  const [errors, setErrors] = useState({})
+
   const [appliedCoupon, setAppliedCoupon] = useState(null)
 
   useEffect(() => {
@@ -89,34 +91,54 @@ const Checkout = () => {
   const discountAmount = !isReseller && appliedCoupon ? appliedCoupon.discountAmount : 0
   const finalTotal = Math.max(0, totalAmount - discountAmount)
 
+  // ✅ Improved Handle Change (Clears error on type)
   const handleAddressChange = (e) => {
-    setShippingAddress({ ...shippingAddress, [e.target.name]: e.target.value })
-    if (selectedAddressIndex !== null) setSelectedAddressIndex(null)
+    const { name, value } = e.target
+    setShippingAddress(prev => ({
+      ...prev,
+      [name]: value
+    }))
+
+    // Clear specific error if user types something
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: '' }))
+    }
   }
 
-  const handleSelectAddress = (address, index) => {
-    setSelectedAddressIndex(index)
-    setShippingAddress({
-      name: address.name,
-      phone: address.phone,
-      address: address.address,
-      city: address.city,
-      state: address.state,
-      pincode: address.pincode
-    })
+  // ✅ Validation Function
+  const validateForm = () => {
+    const newErrors = {}
+    
+    if (!shippingAddress.name.trim()) newErrors.name = "Full Name is required"
+    if (!shippingAddress.phone.trim()) newErrors.phone = "Phone Number is required"
+    else if (shippingAddress.phone.length < 10) newErrors.phone = "Enter a valid phone number"
+    
+    if (!shippingAddress.address.trim()) newErrors.address = "Street Address is required"
+    if (!shippingAddress.city.trim()) newErrors.city = "City is required"
+    if (!shippingAddress.state.trim()) newErrors.state = "State is required"
+    if (!shippingAddress.pincode.trim()) newErrors.pincode = "Pincode is required"
+    else if (shippingAddress.pincode.length < 6) newErrors.pincode = "Invalid Pincode"
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
   }
 
   const handlePlaceOrder = async () => {
-    if (!shippingAddress.name || !shippingAddress.phone || !shippingAddress.address ||
-        !shippingAddress.city || !shippingAddress.state || !shippingAddress.pincode) {
-      toast.error('Please fill in all shipping address fields')
+    // 1. Run Validation First
+    if (!validateForm()) {
+      toast.error('Please fill in all required delivery details', {
+        icon: '📝',
+        duration: 3000
+      })
+      // Scroll to top to see errors
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
 
     setPlacingOrder(true)
 
     try {
-      // 1. Prepare Order Data
+      // 2. Prepare Order Data
       const orderData = {
         items: cart.items.map(item => ({
           product: item.product._id,
@@ -126,15 +148,15 @@ const Checkout = () => {
           selectedColor: item.selectedColor
         })),
         shippingAddress,
-        paymentMethod: 'razorpay', // Enforce Razorpay
+        paymentMethod: 'razorpay', 
         couponCode: appliedCoupon?.code || null
       }
 
-      // 2. Create Order in DB (Pending Payment)
+      // 3. Create Order in DB
       const orderResponse = await orderApi.createOrder(orderData)
       const newOrder = orderResponse.order;
 
-      // 3. Initiate Razorpay Flow
+      // 4. Initiate Razorpay Flow
       const isLoaded = await loadRazorpayScript();
       if (!isLoaded) {
         toast.error('Payment gateway failed to load. Check connection.');
@@ -200,6 +222,32 @@ const Checkout = () => {
 
   const formatPrice = (price) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price)
 
+  // Helper to render input fields with error styles
+  const renderInput = (name, placeholder, label, type = "text") => (
+    <div className="flex flex-col gap-1">
+      <label className="text-sm font-medium text-slate-700 ml-1">
+        {label} <span className="text-red-500">*</span>
+      </label>
+      <input 
+        type={type}
+        name={name} 
+        placeholder={placeholder} 
+        value={shippingAddress[name]} 
+        onChange={handleAddressChange} 
+        className={`p-3 border rounded-lg w-full outline-none transition-all duration-200
+          ${errors[name] 
+            ? 'border-red-500 bg-red-50 focus:border-red-500' 
+            : `border-slate-200 focus:border-${isReseller ? 'indigo' : 'rose'}-500 bg-white`
+          }`}
+      />
+      {errors[name] && (
+        <span className="text-xs text-red-500 flex items-center gap-1 ml-1">
+          <AlertCircle size={10} /> {errors[name]}
+        </span>
+      )}
+    </div>
+  )
+
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-stone-50"><Loader2 className="w-10 h-10 animate-spin text-rose-600"/></div>
 
   return (
@@ -224,33 +272,39 @@ const Checkout = () => {
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isReseller ? 'bg-indigo-50 text-indigo-600' : 'bg-rose-50 text-rose-600'}`}><MapPin size={20} /></div>
                 <h2 className="text-xl font-semibold text-slate-900">Delivery Address</h2>
               </div>
-              
-              {user.addresses && user.addresses.length > 0 && (
-                <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {user.addresses.map((addr, index) => (
-                    <div key={index} onClick={() => handleSelectAddress(addr, index)} className={`cursor-pointer p-4 rounded-xl border-2 transition-all ${selectedAddressIndex === index ? (isReseller ? 'border-indigo-500 bg-indigo-50/30' : 'border-rose-500 bg-rose-50/30') : 'border-slate-100'}`}>
-                      <p className="font-semibold">{addr.name}</p>
-                      <p className="text-sm text-slate-600">{addr.address}, {addr.city}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
+            
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <input name="name" placeholder="Full Name" value={shippingAddress.name} onChange={handleAddressChange} className="p-3 border rounded-lg w-full"/>
-                  <input name="phone" placeholder="Phone" value={shippingAddress.phone} onChange={handleAddressChange} className="p-3 border rounded-lg w-full"/>
+                  {renderInput('name', 'John Doe', 'Full Name')}
+                  {renderInput('phone', '9876543210', 'Phone Number', 'number')}
                 </div>
-                <textarea name="address" placeholder="Address" value={shippingAddress.address} onChange={handleAddressChange} className="p-3 border rounded-lg w-full"/>
-                <div className="grid grid-cols-3 gap-4">
-                  <input name="city" placeholder="City" value={shippingAddress.city} onChange={handleAddressChange} className="p-3 border rounded-lg w-full"/>
-                  <input name="state" placeholder="State" value={shippingAddress.state} onChange={handleAddressChange} className="p-3 border rounded-lg w-full"/>
-                  <input name="pincode" placeholder="Pincode" value={shippingAddress.pincode} onChange={handleAddressChange} className="p-3 border rounded-lg w-full"/>
+                
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-slate-700 ml-1">Address <span className="text-red-500">*</span></label>
+                  <textarea 
+                    name="address" 
+                    placeholder="Street, House No, Area" 
+                    value={shippingAddress.address} 
+                    onChange={handleAddressChange} 
+                    rows={3}
+                    className={`p-3 border rounded-lg w-full outline-none transition-all duration-200 resize-none
+                      ${errors.address 
+                        ? 'border-red-500 bg-red-50 focus:border-red-500' 
+                        : `border-slate-200 focus:border-${isReseller ? 'indigo' : 'rose'}-500 bg-white`
+                      }`}
+                  />
+                  {errors.address && <span className="text-xs text-red-500 flex items-center gap-1 ml-1"><AlertCircle size={10} /> {errors.address}</span>}
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {renderInput('city', 'Mumbai', 'City')}
+                  {renderInput('state', 'Maharashtra', 'State')}
+                  {renderInput('pincode', '400001', 'Pincode', 'number')}
                 </div>
               </div>
             </div>
 
-            {/* ✅ Payment Method (Fixed to Online) */}
+            {/* Payment Section - Unchanged Logic */}
             <div className={`bg-white p-6 md:p-8 rounded-2xl shadow-sm border ${isReseller ? 'border-slate-200' : 'border-slate-100'}`}>
               <div className="flex items-center gap-3 mb-6">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isReseller ? 'bg-indigo-50 text-indigo-600' : 'bg-rose-50 text-rose-600'}`}><CreditCard size={20} /></div>
@@ -284,7 +338,7 @@ const Checkout = () => {
                 <div className="flex justify-between items-center pt-4 border-t mt-2"><span className="font-bold text-lg">Total</span><span className={`text-xl font-bold ${isReseller ? 'text-indigo-600' : 'text-rose-600'}`}>{formatPrice(finalTotal)}</span></div>
               </div>
 
-              <button onClick={handlePlaceOrder} disabled={placingOrder} className={`w-full mt-6 text-white py-4 rounded-xl font-medium shadow-lg flex items-center justify-center gap-2 ${isReseller ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-rose-600 hover:bg-rose-700'}`}>
+              <button onClick={handlePlaceOrder} disabled={placingOrder} className={`w-full mt-6 text-white py-4 rounded-xl font-medium shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95 ${isReseller ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-rose-600 hover:bg-rose-700'}`}>
                 {placingOrder ? <Loader2 className="animate-spin w-5 h-5" /> : <>Pay Securely <ChevronRight size={18} /></>}
               </button>
               

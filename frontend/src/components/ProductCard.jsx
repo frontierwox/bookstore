@@ -1,6 +1,7 @@
 import React, { useContext } from 'react'
 import { Link } from 'react-router-dom'
 import { AuthContext } from '../context/AuthContext' // Import Context
+import { getImageUrl } from '../utils/getImageUrl'
 
 const ProductCard = ({ product }) => {
   const { user } = useContext(AuthContext) // Get User Role
@@ -15,10 +16,7 @@ const ProductCard = ({ product }) => {
     style: 'currency', currency: 'INR', maximumFractionDigits: 0
   }).format(price)
 
-  const imageSrc = product.images?.[0]?.imageId 
-    ? `${import.meta.env.VITE_API_URL}/api/images/${product.images[0].imageId}` 
-    : product.images?.[0]?.url || '/placeholder.png';
-
+  const imageSrc = getImageUrl(product.images?.[0]);
   return (
     <Link to={`/products/${product._id}`} className="group block bg-white rounded-xl border border-slate-100 overflow-hidden hover:shadow-lg transition-all">
       <div className="relative aspect-[3/4] bg-slate-100 overflow-hidden">

@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { productsApi } from '../services/products'
 import { CartContext } from '../context/CartContext'
 import { AuthContext } from '../context/AuthContext'
+import { getImageUrl } from '../utils/getImageUrl';
 
 // --- Helper: Toast Notification ---
 const Toast = ({ message, type, onClose }) => {
@@ -98,34 +99,29 @@ const ProductDetails = () => {
   }
 
   const handleAddToCart = async () => {
-    if (!user) return navigate('/login', { state: { from: `/product/${id}` } })
-    
-    const currentStock = selectedVariant ? selectedVariant.stock : product.stock;
-    if (currentStock <= 0) return
+  if (!user) return navigate('/login', { state: { from: `/products/${id}` } })
+  
+  const currentStock = selectedVariant ? selectedVariant.stock : product.stock;
+  if (currentStock <= 0) return
 
-    setAddingToCart(true)
-    try {
-      // ✅ FIX: Removed the duplicate direct API call.
-      // We only use the Context function which handles the API call internally.
-      
-      await addToCart({
-        _id: product._id,
-        name: product.name,
-        price: product.price,
-        discountPrice: product.discountedPrice || null,
-        image: product.images[0]?.imageId ? `/api/images/${product.images[0].imageId}` : '',
-        selectedSize,
-        selectedColor: selectedVariant?.colorName || selectedVariant?.hexCode || ''
-      }, quantity)
+  setAddingToCart(true)
+  try {
+    // ✅ FIX: Pass the complete product object with selections
+    // The Context will extract the necessary fields
+    await addToCart({
+      ...product, // Full product object
+      selectedSize,
+      selectedColor: selectedVariant?.colorName || ''
+    }, quantity)
 
-      // Toast is handled by Context usually, but we can show local success if needed
-      // ensuring we don't double toast.
-    } catch (error) {
-      setToast({ message: 'Could not add to cart', type: 'error' })
-    } finally {
-      setAddingToCart(false)
-    }
+    // Success toast is handled by Context
+    setToast({ message: 'Added to cart!', type: 'success' })
+  } catch (error) {
+    setToast({ message: 'Could not add to cart', type: 'error' })
+  } finally {
+    setAddingToCart(false)
   }
+}
 
   // Prevent background scroll when Zoom Modal is open
   useEffect(() => {
@@ -149,11 +145,13 @@ const ProductDetails = () => {
     </div>
   )
 
-  const discountPercentage = product.discountedPrice 
-    ? Math.round(((product.price - product.discountedPrice) / product.price) * 100) 
-    : product.discountPercentage || 0;
+  const discountPercentage = product.discountPercentage || 0;
 
-  const currentPrice = product.discountedPrice || Math.round(product.price * (1 - (product.discountPercentage || 0) / 100));
+const currentPrice =
+  discountPercentage > 0
+    ? Math.round(product.price * (1 - discountPercentage / 100))
+    : product.price;
+
   const currentStock = selectedVariant ? selectedVariant.stock : product.stock;
 
   return (
@@ -176,44 +174,62 @@ const ProductDetails = () => {
           {/* --- LEFT: GALLERY --- */}
           <div className="gallery-section">
             <div className="desktop-gallery">
-              <div className="main-image-wrapper" onClick={() => setShowImageZoom(true)}>
-                {product.images?.[selectedImage]?.imageId ? (
-                  <img 
-                    src={`${import.meta.env.VITE_API_URL}/api/images/${product.images[selectedImage].imageId}`} 
-                    alt={product.images[selectedImage].alt || product.name}
-                    className="main-image"
-                  />
-                ) : (
-                  <div className="placeholder-image">
-                    <MdImageNotSupported size={48} className="text-slate-300"/>
-                  </div>
-                )}
-                <button className="zoom-trigger" title="Zoom"><MdZoomIn size={22} /></button>
-                {discountPercentage > 0 && <span className="discount-tag">-{discountPercentage}%</span>}
-              </div>
-              
-              {product.images?.length > 1 && (
-                <div className="thumbnails-scroll">
-                  {product.images.map((img, idx) => (
-                    <div 
-                      key={idx} 
-                      className={`thumbnail ${selectedImage === idx ? 'active' : ''}`}
-                      onMouseEnter={() => setSelectedImage(idx)}
-                      onClick={() => setSelectedImage(idx)}
-                    >
-                      <img src={`${import.meta.env.VITE_API_URL}/api/images/${img.imageId}`} alt={`View ${idx + 1}`} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+  {/* MAIN IMAGE */}
+  <div
+    className="main-image-wrapper"
+    onClick={() => setShowImageZoom(true)}
+  >
+    {product.images?.[selectedImage] ? (
+      <img
+        className="main-image"
+        src={getImageUrl(product.images[selectedImage])}
+        alt={product.images[selectedImage]?.alt || product.name}
+        onError={(e) => (e.currentTarget.src = '/placeholder.png')}
+      />
+    ) : (
+      <div className="placeholder-image">
+        <MdImageNotSupported size={48} className="text-slate-300" />
+      </div>
+    )}
+
+    <button className="zoom-trigger" title="Zoom">
+      <MdZoomIn size={22} />
+    </button>
+
+    {discountPercentage > 0 && (
+      <span className="discount-tag">-{discountPercentage}%</span>
+    )}
+  </div>
+
+  {/* THUMBNAILS */}
+  {product.images?.length > 1 && (
+    <div className="thumbnails-scroll">
+      {product.images.map((img, idx) => (
+        <div
+          key={idx}
+          className={`thumbnail ${
+            selectedImage === idx ? 'active' : ''
+          }`}
+          onMouseEnter={() => setSelectedImage(idx)}
+          onClick={() => setSelectedImage(idx)}
+        >
+          <img
+            src={getImageUrl(img)}
+            alt={`View ${idx + 1}`}
+            onError={(e) => (e.currentTarget.src = '/placeholder.png')}
+          />
+        </div>
+      ))}
+    </div>
+  )}
+</div>
 
             {/* Mobile Gallery */}
             <div className="mobile-gallery">
               <div className="mobile-slider" ref={mobileGalleryRef} onScroll={handleMobileScroll}>
                 {product.images?.length > 0 ? product.images.map((img, idx) => (
                   <div key={idx} className="mobile-slide" onClick={() => setShowImageZoom(true)}>
-                   <img src={`${import.meta.env.VITE_API_URL}/api/images/${img.imageId}`} alt={img.alt || product.name} />
+                  <img src={getImageUrl(img)} alt={img.alt || product.name} />
                   </div>
                 )) : (
                   <div className="mobile-slide placeholder">
@@ -408,8 +424,8 @@ const ProductDetails = () => {
             <button className="zoom-close"><MdClose size={24} /></button>
             <motion.img 
               initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
-              src={`${import.meta.env.VITE_API_URL}/api/images/${product.images[selectedImage].imageId}`}
-              alt="Zoomed" 
+              src={getImageUrl(product.images[selectedImage])}
+              alt="Zoomed"
               onClick={e => e.stopPropagation()} 
             />
           </motion.div>

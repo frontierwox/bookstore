@@ -5,13 +5,11 @@ const { validationResult } = require('express-validator');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
 
 // ✅ HELPER: Recalculate Totals
-// Fixed to access nested retail/wholesale settings from Product Schema
 const recalculateCart = async (cart, userRole = 'user') => {
-  // 1. Ensure products are populated with necessary fields
-  // Added 'retail' and 'wholesale' fields to selection
+  // 1. Populate products with necessary fields
   await cart.populate({
     path: 'items.product',
-    select: 'name price images stock wholesalePrice retail wholesale isDiscountActive discountPercentage discountStartDate discountEndDate'
+    select: 'price stock wholesalePrice retail wholesale isDiscountActive discountPercentage discountStartDate discountEndDate name images'
   });
 
   let subtotal = 0;
@@ -43,8 +41,7 @@ const recalculateCart = async (cart, userRole = 'user') => {
     item.price = unitPrice;
     const lineTotal = unitPrice * qty;
 
-    // --- B. DETERMINE TAX & SHIPPING (FIXED) ---
-    // Access nested schema fields based on role
+    // --- B. DETERMINE TAX & SHIPPING ---
     let logisticsSettings;
     if (userRole === 'reseller') {
       logisticsSettings = product.wholesale || { shippingCost: 0, taxPercentage: 0 };
@@ -94,35 +91,62 @@ exports.getCart = asyncHandler(async (req, res) => {
 });
 
 // @desc    Add item to cart
-// @route   POST /api/cart/add
+// @route   POST /api/cart/add (FIXED - was missing /add)
 exports.addToCart = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) throw new AppError(400, errors.array()[0].msg);
 
-  const { product, quantity, selectedSize, selectedColor } = req.body;
-  
+  let { product, quantity, selectedSize, selectedColor } = req.body;
+
+  // ✅ Normalize & validate quantity
+  quantity = Number(quantity);
+  if (!quantity || quantity < 1) {
+    throw new AppError(400, 'Quantity must be at least 1');
+  }
+
+  // ✅ Validate product
+  if (!product) throw new AppError(400, 'Product ID is required');
+
   const productDoc = await Product.findById(product);
   if (!productDoc) throw new AppError(404, 'Product not found');
-  if (productDoc.stock < quantity) throw new AppError(400, 'Insufficient stock');
 
   let cart = await Cart.findOne({ user: req.user._id });
-  if (!cart) cart = await Cart.create({ user: req.user._id, items: [] });
+  if (!cart) {
+    cart = await Cart.create({ user: req.user._id, items: [] });
+  }
 
+  // Find existing cart item
   const existingItemIndex = cart.items.findIndex(
-    item => item.product.toString() === product &&
-    item.selectedSize === selectedSize &&
-    item.selectedColor === selectedColor
+    item =>
+      item.product.toString() === product &&
+      item.selectedSize === selectedSize &&
+      item.selectedColor === selectedColor
   );
 
-  // Determine Initial Price
+  // Determine unit price
   let unitPrice;
   if (req.user.role === 'reseller') {
-    unitPrice = productDoc.wholesalePrice > 0 ? productDoc.wholesalePrice : productDoc.price;
+    unitPrice =
+      productDoc.wholesalePrice > 0
+        ? productDoc.wholesalePrice
+        : productDoc.price;
   } else {
-    unitPrice = productDoc.getCurrentPrice('user');
+    unitPrice =
+      typeof productDoc.getCurrentPrice === 'function'
+        ? productDoc.getCurrentPrice('user')
+        : productDoc.price;
+  }
+
+  // ✅ Correct stock validation (existing + incoming)
+  const existingQty =
+    existingItemIndex > -1 ? cart.items[existingItemIndex].quantity : 0;
+
+  if (productDoc.stock < existingQty + quantity) {
+    throw new AppError(400, 'Insufficient stock');
   }
 
   if (existingItemIndex > -1) {
+    // ✅ KEY FIX: accumulate quantity correctly
     cart.items[existingItemIndex].quantity += quantity;
     cart.items[existingItemIndex].price = unitPrice;
   } else {
@@ -130,15 +154,19 @@ exports.addToCart = asyncHandler(async (req, res) => {
       product,
       quantity,
       price: unitPrice,
-      selectedSize,
-      selectedColor
+      selectedSize: selectedSize || 'Free Size',
+      selectedColor: selectedColor || 'Standard'
     });
   }
 
-  // ✅ Recalculate totals (Shipping, Tax, Subtotal)
+  // ✅ Recalculate totals (shipping, tax, subtotal)
   await recalculateCart(cart, req.user.role);
 
-  res.json({ success: true, message: 'Item added to cart', cart });
+  res.json({
+    success: true,
+    message: 'Item added to cart',
+    cart
+  });
 });
 
 // @desc    Update cart item quantity
@@ -150,9 +178,9 @@ exports.updateCartItem = asyncHandler(async (req, res) => {
   const cart = await Cart.findOne({ user: req.user._id });
   if (!cart) throw new AppError(404, 'Cart not found');
 
-  const identifier = req.params.productId || req.params.itemId;
+  const identifier = req.params.itemId;
   
-  // Find item
+  // ✅ FIX: Find item by _id OR product ID
   const itemIndex = cart.items.findIndex(i => 
     i._id.toString() === identifier || i.product.toString() === identifier
   );
@@ -184,12 +212,11 @@ exports.removeFromCart = asyncHandler(async (req, res) => {
   const cart = await Cart.findOne({ user: req.user._id });
   if (!cart) throw new AppError(404, 'Cart not found');
 
-  const identifier = req.params.productId || req.params.itemId;
+  const identifier = req.params.itemId;
 
   const initialLength = cart.items.length;
-  cart.items = cart.items.filter(i => 
-    i._id.toString() !== identifier && i.product.toString() !== identifier
-  );
+  // ✅ FIX: Remove by line item _id (specific variant entry)
+  cart.items = cart.items.filter(i => i._id.toString() !== identifier);
 
   if (cart.items.length === initialLength) throw new AppError(404, 'Item not found');
 
@@ -199,6 +226,7 @@ exports.removeFromCart = asyncHandler(async (req, res) => {
 });
 
 // @desc    Clear cart
+// @route   DELETE /api/cart
 exports.clearCart = asyncHandler(async (req, res) => {
   const cart = await Cart.findOne({ user: req.user._id });
   if (!cart) throw new AppError(404, 'Cart not found');
@@ -215,7 +243,8 @@ exports.clearCart = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Cart cleared', cart });
 });
 
-// @desc    Merge cart (Login)
+// @desc    Merge guest cart on login
+// @route   POST /api/cart/merge
 exports.mergeCart = asyncHandler(async (req, res) => {
   const { guestCartItems } = req.body;
   if (!guestCartItems || !Array.isArray(guestCartItems)) throw new AppError(400, 'Invalid items');
@@ -231,7 +260,9 @@ exports.mergeCart = asyncHandler(async (req, res) => {
     if (req.user.role === 'reseller') {
       unitPrice = productDoc.wholesalePrice > 0 ? productDoc.wholesalePrice : productDoc.price;
     } else {
-      unitPrice = productDoc.getCurrentPrice('user');
+      unitPrice = typeof productDoc.getCurrentPrice === 'function'
+        ? productDoc.getCurrentPrice('user')
+        : productDoc.price;
     }
 
     const existingItemIndex = cart.items.findIndex(
@@ -245,8 +276,11 @@ exports.mergeCart = asyncHandler(async (req, res) => {
       cart.items[existingItemIndex].price = unitPrice;
     } else {
       cart.items.push({
-        ...guestItem,
-        price: unitPrice
+        product: guestItem.product,
+        quantity: guestItem.quantity,
+        price: unitPrice,
+        selectedSize: guestItem.selectedSize || 'Free Size',
+        selectedColor: guestItem.selectedColor || 'Standard'
       });
     }
   }

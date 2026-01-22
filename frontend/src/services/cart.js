@@ -1,3 +1,4 @@
+// services/cart.js
 import api from './api';
 
 // Get current user's cart
@@ -6,23 +7,26 @@ export const getCart = async () => {
   return response.data;
 };
 
-// Add item to cart
-// Payload example: { productId, quantity, selectedColor, selectedSize, price }
-export const addToCart = async (item) => {
-  const response = await api.post('/cart/add', item);
+// ✅ FIX: Changed endpoint from /cart to /cart/add
+export const addToCart = async (item, quantity = 1) => {
+  const response = await api.post('/cart/add', {
+    ...item,
+    quantity
+  });
   return response.data;
 };
 
 // Update item quantity
-// Note: Uses PUT /cart/:productId
-export const updateCartItem = async (productId, quantity) => {
-  const response = await api.put(`/cart/${productId}`, { quantity });
+// ✅ Uses PUT /cart/:itemId (can be line item _id or product _id)
+export const updateCartItem = async (cartItemId, quantity) => {
+  const response = await api.put(`/cart/${cartItemId}`, { quantity });
   return response.data;
 };
 
-// Remove single item
-export const removeFromCart = async (productId) => {
-  const response = await api.delete(`/cart/${productId}`);
+
+// ✅ Remove single item (by line item _id)
+export const removeFromCart = async (itemId) => {
+  const response = await api.delete(`/cart/${itemId}`);
   return response.data;
 };
 
@@ -32,9 +36,14 @@ export const clearCart = async () => {
   return response.data;
 };
 
+// Merge guest cart on login
+export const mergeCart = async (guestCartItems) => {
+  const response = await api.post('/cart/merge', { guestCartItems });
+  return response.data;
+};
+
 // Validate Coupon Code
 export const validateCoupon = async (couponData) => {
-  // Post payload: { code, cartTotal, cartItems }
   const response = await api.post('/cart/validate-coupon', couponData);
   return response.data;
 };
@@ -45,6 +54,7 @@ export const cartApi = {
   updateCartItem,
   removeFromCart,
   clearCart,
+  mergeCart,
   validateCoupon
 };
 

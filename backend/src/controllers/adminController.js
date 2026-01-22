@@ -3,8 +3,7 @@ const Order = require('../models/Order');
 const Product = require('../models/Product');
 const { validationResult } = require('express-validator');
 const { asyncHandler, AppError } = require('../middleware/errorHandler');
-const getGFS = require('../config/gridfs');
-const { Readable } = require('stream');
+const cloudinary = require('../config/cloudinary');
 
 // @desc    Get dashboard statistics
 // @route   GET /api/admin/dashboard
@@ -99,34 +98,35 @@ exports.getAllUsers = asyncHandler(async (req, res) => {
 // @desc    Upload Image to GridFS
 // @route   POST /api/admin/products/upload
 // @access  Private (Admin)
-exports.uploadImage = async (req, res) => {
-  // Using generic async/await here because stream events need manual handling
+// @desc    Upload Image to Cloudinary
+// @route   POST /api/admin/products/upload
+// @access  Private (Admin)
+exports.uploadImage = asyncHandler(async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ message: 'No image uploaded' });
+    throw new AppError(400, 'No image uploaded');
   }
 
-  const gfs = getGFS();
-
-  // Create read stream from buffer (since we use memoryStorage)
-  const stream = Readable.from(req.file.buffer);
-
-  const uploadStream = gfs.openUploadStream(req.file.originalname, {
-    contentType: req.file.mimetype
+  const result = await new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_stream(
+      {
+        folder: 'products',
+        resource_type: 'image'
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }
+    ).end(req.file.buffer);
   });
 
-  stream.pipe(uploadStream);
-
-  uploadStream.on('error', (err) => {
-    return res.status(500).json({ success: false, message: 'Error uploading image' });
+  res.json({
+    success: true,
+    image: {
+      url: result.secure_url,
+      publicId: result.public_id
+    }
   });
-
-  uploadStream.on('finish', () => {
-    res.json({
-      success: true,
-      imageId: uploadStream.id.toString()
-    });
-  });
-};
+});
 
 // @desc    Get user details
 // @route   GET /api/admin/users/:userId

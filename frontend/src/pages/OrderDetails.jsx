@@ -54,24 +54,7 @@ const OrderDetails = () => {
 
   // --- Helper: Get Image URL Correctly ---
   const getProductImage = (item) => {
-  // 1. If order item has stored image
-  if (item.image) {
-    // If it's a MongoDB ObjectId → serve via API
-    if (/^[a-f\d]{24}$/i.test(item.image)) {
-      return `${import.meta.env.VITE_API_URL}/api/images/${item.image}`;
-    }
-    // Otherwise assume it's a normal URL
-    return item.image;
-  }
-
-  // 2. Fallback to populated product images
-  const images = item.product?.images;
-  if (images && images.length > 0) {
-    if (images[0].imageId) return `${import.meta.env.VITE_API_URL}/api/images/${images[0].imageId}`;
-    if (images[0].url) return images[0].url;
-  }
-
-  // 3. Final fallback
+  if (item.image) return item.image;
   return '/placeholder.jpg';
 };
 

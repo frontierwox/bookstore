@@ -6,6 +6,7 @@ import { cartApi } from '../services/cart'
 import { AuthContext } from '../context/AuthContext'
 import CartSummary from '../components/CartSummary' 
 import toast from 'react-hot-toast'
+import { getImageUrl } from '../utils/getImageUrl'
 
 const Cart = () => {
   const navigate = useNavigate()
@@ -58,9 +59,8 @@ const Cart = () => {
     setUpdatingItems(prev => new Set(prev).add(item._id))
 
     try {
-      // Use the specific line item ID or product ID if unavailable
-      const targetId = item.product?._id || item._id; 
-      const data = await cartApi.updateCartItem(targetId, newQuantity)
+      // ✅ FIX: Use the cart line item _id directly
+      const data = await cartApi.updateCartItem(item._id, newQuantity)
       
       if (data.success) {
         setCart(data.cart)
@@ -80,14 +80,12 @@ const Cart = () => {
   }
 
   const handleRemoveItem = async (itemId) => {
-    // itemId passed here is the unique line item _id (from cart.items map)
+    // ✅ FIX: itemId is already the cart line item _id from the map
     if (removingId) return;
     setRemovingId(itemId)
 
     try {
-      // ✅ FIX: Use the specific line item ID directly.
-      // This allows backend to filter by i._id === itemId, removing ONLY this specific variant/entry.
-      // Previously, we calculated targetId which often resolved to Product ID, deleting all variants.
+      // ✅ Use the line item _id directly - this is the correct approach
       const data = await cartApi.removeFromCart(itemId)
       
       if (data.success) {
@@ -100,7 +98,8 @@ const Cart = () => {
         }
       }
     } catch (error) {
-      toast.error("Failed to remove item")
+      console.error('Remove error:', error)
+      toast.error(error.response?.data?.message || "Failed to remove item")
     } finally {
       setRemovingId(null)
     }
@@ -168,15 +167,8 @@ const Cart = () => {
     }).format(price)
   }
 
-  // --- Helper: Get Image URL Correctly ---
   const getProductImage = (item) => {
-    const images = item.product?.images;
-    if (images && images.length > 0) {
-      // Prioritize imageId for GridFS, fallback to url
-      if (images[0].imageId) return `${import.meta.env.VITE_API_URL}/api/images/${images[0].imageId}`;
-      if (images[0].url) return images[0].url;
-    }
-    return '/placeholder.jpg'; // Or a default image path
+    return getImageUrl(item.product?.images?.[0]);
   }
 
   if (loading) {
@@ -255,13 +247,12 @@ const Cart = () => {
                   <div className="flex flex-col md:grid md:grid-cols-12 gap-4 items-center">
                     <div className="w-full md:col-span-6 flex gap-3 md:gap-4">
                       
-                      {/* --- FIXED IMAGE RENDER --- */}
                       <div className="w-20 h-24 md:w-24 md:h-32 shrink-0 rounded-lg overflow-hidden bg-slate-100 relative border border-slate-100">
                         <img 
                           src={getProductImage(item)} 
                           alt={item.product?.name || "Product"} 
                           className="w-full h-full object-cover"
-                          onError={(e) => { e.target.src = '/placeholder.jpg'; }} // Fallback on error
+                          onError={(e) => { e.target.src = '/placeholder.jpg'; }}
                         />
                         {(removingId === item._id || updatingItems.has(item._id)) && (
                            <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10 backdrop-blur-[1px]">
@@ -307,6 +298,7 @@ const Cart = () => {
 
                     <div className="hidden md:flex md:col-span-3 flex-col justify-center items-end text-right">
                       <div className="font-medium text-lg text-slate-900">{formatPrice(item.price * item.quantity)}</div>
+                      {/* ✅ FIX: Pass item._id directly - this is the cart line item ID */}
                       <button onClick={() => handleRemoveItem(item._id)} disabled={removingId === item._id} className="flex items-center text-xs font-medium text-slate-400 hover:text-red-500 mt-3 transition-colors px-2 py-1 rounded hover:bg-red-50">
                         <Trash2 size={14} className="mr-1.5" /> Remove
                       </button>
