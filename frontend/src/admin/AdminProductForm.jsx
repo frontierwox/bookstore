@@ -4,7 +4,7 @@ import {
   ArrowLeft, Save, Loader2, Image as ImageIcon, X, 
   Tag, IndianRupee, Layers, Percent, Box, Ticket, 
   UploadCloud, Plus, Trash2, ChevronRight, TrendingDown, 
-  Truck, Receipt
+  Truck, CheckCircle, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
@@ -12,8 +12,55 @@ import { adminApi } from '../services/admin';
 import { productsApi } from '../services/products';
 import AdminCouponManager from './AdminCouponManager'; 
 
+// --- INTERNAL COMPONENT: SUCCESS MODAL ---
+const SuccessModal = ({ isOpen, onClose, onNavigate, message, isEdit }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.9 }}
+        className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center"
+      >
+        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <CheckCircle className="text-green-600 w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-800 mb-2">Success!</h2>
+        <p className="text-slate-600 mb-6">{message}</p>
+        
+        <div className="flex flex-col gap-3">
+          <button 
+            onClick={onNavigate} 
+            className="w-full py-2.5 bg-slate-900 text-white rounded-xl font-medium hover:bg-slate-800 transition-colors"
+          >
+            Go to Products List
+          </button>
+          {!isEdit && (
+            <button 
+              onClick={onClose} 
+              className="w-full py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-50 transition-colors"
+            >
+              Add Another Product
+            </button>
+          )}
+          {isEdit && (
+            <button 
+              onClick={onClose} 
+              className="w-full py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-50 transition-colors"
+            >
+              Keep Editing
+            </button>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 // --- INTERNAL COMPONENT: ENHANCED IMAGE UPLOADER ---
-const ImageUploadArea = ({ images, onChange, maxImages = 5, maxSizeMB = 5 }) => {
+const ImageUploadArea = ({ images, onChange, maxImages = 25, maxSizeMB = 5, error }) => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -55,10 +102,10 @@ const ImageUploadArea = ({ images, onChange, maxImages = 5, maxSizeMB = 5 }) => 
   };
 
   const getPreview = (item) => {
-  if (item?.url) return item.url;
-  if (item instanceof File) return URL.createObjectURL(item);
-  return '/placeholder.png';
-};
+    if (item?.url) return item.url;
+    if (item instanceof File) return URL.createObjectURL(item);
+    return '/placeholder.png';
+  };
 
   useEffect(() => {
     return () => {
@@ -79,7 +126,8 @@ const ImageUploadArea = ({ images, onChange, maxImages = 5, maxSizeMB = 5 }) => 
           onDrop={onDrop}
           onClick={() => fileInputRef.current?.click()}
           className={`relative group cursor-pointer flex flex-col items-center justify-center w-full h-40 rounded-2xl border-2 border-dashed transition-all duration-300 ease-out 
-            ${isDragging 
+            ${error ? 'border-red-400 bg-red-50' : 
+             isDragging 
               ? 'border-rose-500 bg-rose-50 scale-[1.01]' 
               : 'border-slate-300 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-400'
             }`}
@@ -92,9 +140,16 @@ const ImageUploadArea = ({ images, onChange, maxImages = 5, maxSizeMB = 5 }) => 
             <p className="text-sm font-semibold text-slate-700">
               <span className="text-rose-600 hover:underline">Click to upload</span> or drag and drop
             </p>
-            <p className="text-xs text-slate-400 mt-1">PNG, JPG, WebP up to {maxSizeMB}MB</p>
+            <p className="text-xs text-slate-400 mt-1">PNG, JPG, WebP up to {maxSizeMB}MB (Max {maxImages})</p>
           </div>
         </div>
+      )}
+
+      {error && (
+         <div className="flex items-center gap-2 text-red-500 text-sm animate-pulse">
+            <AlertCircle size={16} />
+            <span>{error}</span>
+         </div>
       )}
 
       <AnimatePresence mode='popLayout'>
@@ -103,7 +158,7 @@ const ImageUploadArea = ({ images, onChange, maxImages = 5, maxSizeMB = 5 }) => 
             {images.map((image, index) => (
               <motion.div
                 layout
-                key={image instanceof File ? `${image.name}-${index}` : image}
+                key={image instanceof File ? `${image.name}-${index}` : image.url || index}
                 initial={{ opacity: 0, scale: 0.8, y: 10 }} 
                 animate={{ opacity: 1, scale: 1, y: 0 }} 
                 exit={{ opacity: 0, scale: 0.5 }} 
@@ -171,41 +226,40 @@ const AdminProductForm = ({ mode }) => {
   const [initialLoading, setInitialLoading] = useState(isEdit);
   const [showCouponManager, setShowCouponManager] = useState(false);
   const [removedImageIds, setRemovedImageIds] = useState([]);
+  
+  // Success Modal State
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+
+  // UI Error State
+  const [formErrors, setFormErrors] = useState({});
 
   const [newVariant, setNewVariant] = useState({ colorName: 'Red', hexCode: '#ef4444', stock: 10 });
 
-  // ✅ UPDATED: Added wholesalePrice, shippingCost, taxPercentage
- const [form, setForm] = useState({
-  name: '',
-  description: '',
-  price: '',
-  wholesalePrice: '',
-
-  // ✅ RETAIL
-  retailShippingCost: '',
-  retailTaxPercentage: '',
-
-  // ✅ WHOLESALE
-  wholesaleShippingCost: '',
-  wholesaleTaxPercentage: '',
-
-  category: 'silk',
-  discountPercentage: 0,
-  discountStartDate: '',
-  discountEndDate: '',
-  variants: [],
-  sizes: [],
-  tags: [],
-  images: [],
-  imageAlt: ''
-});
-
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    price: '',
+    wholesalePrice: '',
+    retailShippingCost: '',
+    retailTaxPercentage: '',
+    wholesaleShippingCost: '',
+    wholesaleTaxPercentage: '',
+    category: 'silk',
+    discountPercentage: 0,
+    discountStartDate: '',
+    discountEndDate: '',
+    variants: [],
+    sizes: [],
+    tags: [],
+    images: [],
+    imageAlt: ''
+  });
 
   const totalStock = useMemo(() => {
     return form.variants.reduce((acc, curr) => acc + Number(curr.stock), 0);
   }, [form.variants]);
 
-  // ✅ UPDATED: Calculate margins for display
   const marginAmount = useMemo(() => {
     const retail = Number(form.price) || 0;
     const wholesale = Number(form.wholesalePrice) || 0;
@@ -233,11 +287,11 @@ const AdminProductForm = ({ mode }) => {
           name: product.name || '',
           description: product.description || '',
           price: product.price ?? '',
-          wholesalePrice: product.wholesalePrice ?? '', // ✅ NEW
+          wholesalePrice: product.wholesalePrice ?? '',
           retailShippingCost: product.retail?.shippingCost ?? '',
-retailTaxPercentage: product.retail?.taxPercentage ?? '',
-wholesaleShippingCost: product.wholesale?.shippingCost ?? '',
-wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
+          retailTaxPercentage: product.retail?.taxPercentage ?? '',
+          wholesaleShippingCost: product.wholesale?.shippingCost ?? '',
+          wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
           category: product.category || 'silk',
           discountPercentage: product.discountPercentage ?? 0,
           discountStartDate: product.discountStartDate ? new Date(product.discountStartDate).toISOString().split('T')[0] : '',
@@ -261,6 +315,10 @@ wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+    // Clear error for this field if it exists
+    if (formErrors[name]) {
+        setFormErrors(prev => ({ ...prev, [name]: null }));
+    }
   };
 
   const handleAddItem = (e, field) => {
@@ -289,6 +347,8 @@ wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
       variants: [...prev.variants, { ...newVariant, stock: Number(newVariant.stock) }]
     }));
     setNewVariant(prev => ({ ...prev, stock: 10 })); 
+    // Clear error if exists
+    if (formErrors.variants) setFormErrors(prev => ({ ...prev, variants: null }));
   };
 
   const handleRemoveVariant = (index) => {
@@ -298,123 +358,121 @@ wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
     }));
   };
 
-    const uploadImageToCloudinary = async (file) => {
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_PRESET);
+  const uploadImageToCloudinary = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', import.meta.env.VITE_CLOUDINARY_PRESET);
 
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`,
-    {
-      method: 'POST',
-      body: formData
-    }
-  );
+    const res = await fetch(
+      `https://api.cloudinary.com/v1_1/${import.meta.env.VITE_CLOUDINARY_CLOUD_NAME}/image/upload`,
+      { method: 'POST', body: formData }
+    );
 
-  if (!res.ok) {
-    throw new Error('Cloudinary upload failed');
-  }
+    if (!res.ok) throw new Error('Cloudinary upload failed');
+    const data = await res.json();
 
-  const data = await res.json();
-
-  return {
-    url: data.secure_url,
-    publicId: data.public_id
+    return { url: data.secure_url, publicId: data.public_id };
   };
-};
 
+  const validateForm = () => {
+      const errors = {};
+      if (!form.name.trim()) errors.name = "Product Name is required";
+      if (!form.description.trim()) errors.description = "Description is required";
+      if (!form.price || Number(form.price) <= 0) errors.price = "Valid price is required";
+      if (!form.category) errors.category = "Category is required";
+      if (form.images.length === 0) errors.images = "At least 1 image is required";
+      if (form.variants.length === 0) errors.variants = "At least 1 color variant is required";
+
+      setFormErrors(errors);
+      return Object.keys(errors).length === 0;
+  };
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!form.name || !form.description || form.price === '' || !form.category) {
-    toast.error('Please fill in required fields');
-    return;
-  }
-
-  if (form.images.length === 0) {
-    toast.error('Please upload at least one image');
-    return;
-  }
-
-  if (form.variants.length === 0) {
-    toast.error('Please add at least one color variant');
-    return;
-  }
-
-  try {
-    setLoading(true);
-
-    // 🔹 Separate new files & existing images
-    const newFiles = form.images.filter(img => img instanceof File);
-    const existingImages = form.images.filter(img => img?.url);
-
-    // 🔹 Start with existing Cloudinary images
-    let finalImages = [...existingImages];
-
-    // 🔹 Upload new images to Cloudinary
-    for (const file of newFiles) {
-      const uploaded = await uploadImageToCloudinary(file);
-      finalImages.push(uploaded);
+    if (!validateForm()) {
+        toast.error('Please fix the errors highlighting in red');
+        return;
     }
 
-    // 🔹 Final payload (MATCHES PRODUCT SCHEMA EXACTLY)
-    const payload = {
-      name: form.name,
-      description: form.description,
-      category: form.category,
-      tags: form.tags,
-      sizes: form.sizes,
-      variants: form.variants,
+    try {
+      setLoading(true);
 
-      price: Number(form.price),
-      wholesalePrice: Number(form.wholesalePrice) || 0,
+      // 🔹 Separate new files & existing images
+      const newFiles = form.images.filter(img => img instanceof File);
+      const existingImages = form.images.filter(img => img?.url);
 
-      retail: {
-        shippingCost: Number(form.retailShippingCost) || 0,
-        taxPercentage: Number(form.retailTaxPercentage) || 0
-      },
+      // 🔹 Start with existing Cloudinary images
+      let finalImages = [...existingImages];
 
-      wholesale: {
-        shippingCost: Number(form.wholesaleShippingCost) || 0,
-        taxPercentage: Number(form.wholesaleTaxPercentage) || 0
-      },
+      // 🔹 Parallel Upload for better performance with 25 images
+      if (newFiles.length > 0) {
+        // Create an array of promises
+        const uploadPromises = newFiles.map(file => uploadImageToCloudinary(file));
+        
+        // Wait for all uploads to complete
+        const uploadedResults = await Promise.all(uploadPromises);
+        finalImages = [...finalImages, ...uploadedResults];
+      }
 
-      stock: totalStock,
+      // 🔹 Final payload
+      const payload = {
+        name: form.name,
+        description: form.description,
+        category: form.category,
+        tags: form.tags,
+        sizes: form.sizes,
+        variants: form.variants,
+        price: Number(form.price),
+        wholesalePrice: Number(form.wholesalePrice) || 0,
+        retail: {
+          shippingCost: Number(form.retailShippingCost) || 0,
+          taxPercentage: Number(form.retailTaxPercentage) || 0
+        },
+        wholesale: {
+          shippingCost: Number(form.wholesaleShippingCost) || 0,
+          taxPercentage: Number(form.wholesaleTaxPercentage) || 0
+        },
+        stock: totalStock,
+        discountPercentage: Number(form.discountPercentage),
+        discountStartDate: form.discountStartDate || null,
+        discountEndDate: form.discountEndDate || null,
+        images: finalImages
+      };
 
-      discountPercentage: Number(form.discountPercentage),
-      discountStartDate: form.discountStartDate || null,
-      discountEndDate: form.discountEndDate || null,
+      if (isEdit) {
+        await adminApi.updateProduct(id, payload);
+        setSuccessMessage('Product updated successfully!');
+      } else {
+        await adminApi.createProduct(payload);
+        setSuccessMessage('Product created successfully!');
+      }
 
-      images: finalImages
-    };
+      // Trigger Success Modal instead of navigate
+      setShowSuccess(true);
 
-    if (isEdit) {
-      await adminApi.updateProduct(id, payload);
-      toast.success('Product updated successfully');
-    } else {
-      const res = await adminApi.createProduct(payload);
-      toast.success('Product created successfully');
-
-      const newId =
-        res?.product?._id ||
-        res?.data?._id ||
-        res?._id;
-
-      if (newId) navigate(`/admin/products/${newId}/edit`);
-      else navigate('/admin/products');
+    } catch (error) {
+      console.error(error);
+      toast.error('Save failed: ' + (error.message || 'Unknown error'));
+    } finally {
+      setLoading(false);
     }
+  };
 
-  } catch (error) {
-    console.error(error);
-    toast.error('Save failed: ' + (error.message || 'Unknown error'));
-  } finally {
-    setLoading(false);
-  }
-};
+  const handleResetForm = () => {
+    setForm({
+        name: '', description: '', price: '', wholesalePrice: '',
+        retailShippingCost: '', retailTaxPercentage: '',
+        wholesaleShippingCost: '', wholesaleTaxPercentage: '',
+        category: 'silk', discountPercentage: 0,
+        discountStartDate: '', discountEndDate: '',
+        variants: [], sizes: [], tags: [], images: [], imageAlt: ''
+    });
+    setFormErrors({});
+    setShowSuccess(false);
+  };
 
-
-  const inputClass = "w-full px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 transition-all duration-200";
+  const inputClass = (name) => `w-full px-4 py-2.5 bg-white border rounded-lg text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-4 transition-all duration-200 ${formErrors[name] ? 'border-red-500 focus:ring-red-500/10 focus:border-red-500' : 'border-slate-200 focus:border-rose-500 focus:ring-rose-500/10'}`;
   const labelClass = "text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5 block";
   const cardClass = "bg-white p-6 sm:p-8 rounded-2xl border border-slate-100 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)]";
 
@@ -429,6 +487,20 @@ wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
 
   return (
     <div className="min-h-screen bg-slate-50/50 pb-20 relative font-sans text-slate-900">
+      
+      {/* Success Modal */}
+      <AnimatePresence>
+        {showSuccess && (
+            <SuccessModal 
+                isOpen={showSuccess}
+                isEdit={isEdit}
+                message={successMessage}
+                onClose={() => isEdit ? setShowSuccess(false) : handleResetForm()}
+                onNavigate={() => navigate('/admin/products')}
+            />
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {showCouponManager && (
           <motion.div 
@@ -475,7 +547,7 @@ wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
              </button>
              <button onClick={handleSubmit} disabled={loading} className="px-6 py-2.5 bg-slate-900 text-white font-medium rounded-xl flex items-center gap-2 hover:bg-slate-800 hover:shadow-lg hover:shadow-slate-900/20 active:scale-95 transition-all disabled:opacity-70 disabled:active:scale-100">
                {loading ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>} 
-               {isEdit ? 'Update Product' : 'Publish Product'}
+               {loading ? (isEdit ? 'Updating...' : 'Publishing...') : (isEdit ? 'Update Product' : 'Publish Product')}
              </button>
           </div>
         </div>
@@ -494,27 +566,31 @@ wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
               <div className="space-y-5">
                 <div>
                   <label className={labelClass}>Product Name <span className="text-red-500">*</span></label>
-                  <input name="name" value={form.name} onChange={handleChange} className={inputClass} placeholder="e.g. Kanchipuram Silk Saree" />
+                  <input name="name" value={form.name} onChange={handleChange} className={inputClass('name')} placeholder="e.g. Kanchipuram Silk Saree" />
+                  {formErrors.name && <p className="text-red-500 text-xs mt-1">{formErrors.name}</p>}
                 </div>
                 <div>
                   <label className={labelClass}>Description <span className="text-red-500">*</span></label>
-                  <textarea name="description" value={form.description} onChange={handleChange} rows={5} className={`${inputClass} resize-y min-h-[120px]`} placeholder="Describe the fabric, weave, and occasion..." />
+                  <textarea name="description" value={form.description} onChange={handleChange} rows={5} className={`${inputClass('description')} resize-y min-h-[120px]`} placeholder="Describe the fabric, weave, and occasion..." />
+                  {formErrors.description && <p className="text-red-500 text-xs mt-1">{formErrors.description}</p>}
                 </div>
               </div>
             </div>
 
-            {/* Images */}
+            {/* Images - INCREASED CAPACITY TO 25 */}
             <div className={cardClass}>
               <div className="flex justify-between items-start mb-6">
                 <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                   <div className="p-2 bg-rose-50 text-rose-600 rounded-lg"><ImageIcon size={20}/></div>
                   Media Gallery <span className="text-red-500">*</span>
                 </h3>
-                <span className="text-xs font-medium bg-slate-100 text-slate-500 px-2 py-1 rounded">Max 5 images</span>
+                <span className="text-xs font-medium bg-slate-100 text-slate-500 px-2 py-1 rounded">Max 25 images</span>
               </div>
               
               <ImageUploadArea
                 images={form.images}
+                maxImages={25}
+                error={formErrors.images}
                 onChange={(imgs) => {
                   const removed = form.images.filter(
                     img => typeof img === 'string' && !imgs.includes(img)
@@ -523,12 +599,13 @@ wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
                     setRemovedImageIds(prev => [...prev, ...removed]);
                   }
                   setForm(prev => ({ ...prev, images: imgs }));
+                  if (imgs.length > 0) setFormErrors(prev => ({ ...prev, images: null }));
                 }}
               />
               
               <div className="mt-5 pt-5 border-t border-slate-100">
-                 <label className={labelClass}>Alt Text (SEO)</label>
-                 <input name="imageAlt" value={form.imageAlt} onChange={handleChange} className={inputClass} placeholder="Describe images for accessibility" />
+                  <label className={labelClass}>Alt Text (SEO)</label>
+                  <input name="imageAlt" value={form.imageAlt} onChange={handleChange} className={inputClass('imageAlt')} placeholder="Describe images for accessibility" />
               </div>
             </div>
 
@@ -543,7 +620,7 @@ wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
                 <div>
                   <label className={labelClass}>Category <span className="text-red-500">*</span></label>
                   <div className="relative">
-                    <select name="category" value={form.category} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
+                    <select name="category" value={form.category} onChange={handleChange} className={`${inputClass('category')} appearance-none cursor-pointer`}>
                       {categories.map(c=><option key={c.value} value={c.value}>{c.label}</option>)}
                     </select>
                     <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 rotate-90 text-slate-400 pointer-events-none" size={16} />
@@ -552,315 +629,336 @@ wholesaleTaxPercentage: product.wholesale?.taxPercentage ?? '',
                 <div>
                   <label className={labelClass}>Total Stock</label>
                   <div className="relative">
-                     <input value={totalStock} readOnly className={`${inputClass} bg-slate-50 text-slate-500 font-medium`} />
-                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded">AUTO</div>
-</div>
-</div>
-</div>
-{/* Add Variant Section */}
-          <div className="bg-slate-50 rounded-xl p-5 border border-slate-200">
-            <label className="text-sm font-bold text-slate-800 mb-4 block">Add Color Variant</label>            <div className="flex flex-col lg:flex-row items-end gap-4">
-              <div className="w-full lg:flex-1">
-                <span className="text-xs text-slate-500 mb-1.5 block">Color Name</span>
-                <input 
-                  value={newVariant.colorName} 
-                  onChange={e => setNewVariant(p => ({...p, colorName: e.target.value}))}
-                  className={inputClass} 
-                  placeholder="e.g. Royal Blue"
-                />
-              </div>              <div className="w-full lg:w-auto flex flex-col">
-                <span className="text-xs text-slate-500 mb-1.5 block">Hex Code</span>
-                <div className="flex items-center gap-3 bg-white p-1.5 border border-slate-200 rounded-lg">
-                  <div className="relative w-10 h-9 rounded overflow-hidden shadow-inner border border-slate-100 flex-shrink-0">
+                      <input value={totalStock} readOnly className={`${inputClass('')} bg-slate-50 text-slate-500 font-medium`} />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded">AUTO</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Add Variant Section */}
+              <div className={`bg-slate-50 rounded-xl p-5 border ${formErrors.variants ? 'border-red-300 ring-2 ring-red-100' : 'border-slate-200'}`}>
+                <label className="text-sm font-bold text-slate-800 mb-4 block">Add Color Variant</label>
+                <div className="flex flex-col lg:flex-row items-end gap-4">
+                  <div className="w-full lg:flex-1">
+                    <span className="text-xs text-slate-500 mb-1.5 block">Color Name</span>
                     <input 
-                      type="color" 
-                      value={newVariant.hexCode}
-                      onChange={e => setNewVariant(p => ({...p, hexCode: e.target.value}))}
-                      className="absolute -top-2 -left-2 w-16 h-16 p-0 cursor-pointer"
+                      value={newVariant.colorName} 
+                      onChange={e => setNewVariant(p => ({...p, colorName: e.target.value}))}
+                      className={inputClass('')} 
+                      placeholder="e.g. Royal Blue"
                     />
                   </div>
-                  <input 
-                     value={newVariant.hexCode}
-                     onChange={e => setNewVariant(p => ({...p, hexCode: e.target.value}))}
-                     className="w-24 text-sm font-mono text-slate-600 outline-none uppercase"
-                     maxLength={7}
-                  />
-                  <div className="h-6 w-px bg-slate-200 mx-1"></div>
-                  <div className="flex gap-1 pr-1">
-                    {PRESET_COLORS.slice(0, 5).map(c => (
-                      <button 
-                        key={c.name} 
-                        type="button"
-                        onClick={() => setNewVariant(p => ({...p, hexCode: c.hex, colorName: c.name}))}
-                        className="w-5 h-5 rounded-full border border-slate-200 hover:scale-110 transition-transform shadow-sm" 
-                        style={{backgroundColor: c.hex}} 
-                        title={c.name}
+                  <div className="w-full lg:w-auto flex flex-col">
+                    <span className="text-xs text-slate-500 mb-1.5 block">Hex Code</span>
+                    <div className="flex items-center gap-3 bg-white p-1.5 border border-slate-200 rounded-lg">
+                      <div className="relative w-10 h-9 rounded overflow-hidden shadow-inner border border-slate-100 flex-shrink-0">
+                        <input 
+                          type="color" 
+                          value={newVariant.hexCode}
+                          onChange={e => setNewVariant(p => ({...p, hexCode: e.target.value}))}
+                          className="absolute -top-2 -left-2 w-16 h-16 p-0 cursor-pointer"
+                        />
+                      </div>
+                      <input 
+                          value={newVariant.hexCode}
+                          onChange={e => setNewVariant(p => ({...p, hexCode: e.target.value}))}
+                          className="w-24 text-sm font-mono text-slate-600 outline-none uppercase"
+                          maxLength={7}
                       />
-                    ))}
+                      <div className="h-6 w-px bg-slate-200 mx-1"></div>
+                      <div className="flex gap-1 pr-1">
+                        {PRESET_COLORS.slice(0, 5).map(c => (
+                          <button 
+                            key={c.name} 
+                            type="button"
+                            onClick={() => setNewVariant(p => ({...p, hexCode: c.hex, colorName: c.name}))}
+                            className="w-5 h-5 rounded-full border border-slate-200 hover:scale-110 transition-transform shadow-sm" 
+                            style={{backgroundColor: c.hex}} 
+                            title={c.name}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="w-full lg:w-auto flex items-center gap-3">
+                    <div className="w-24">
+                       <span className="text-xs text-slate-500 mb-1.5 block">Quantity</span>
+                       <input 
+                        type="number" min="0" 
+                        value={newVariant.stock}
+                        onChange={e => setNewVariant(p => ({...p, stock: e.target.value}))}
+                        className={inputClass('')}
+                      />
+                    </div>
+                    <button 
+                      onClick={handleAddVariant} 
+                      type="button" 
+                      className="h-[42px] px-4 bg-slate-900 text-white rounded-lg hover:bg-slate-800 hover:shadow-lg flex items-center gap-2 transition-all active:scale-95"
+                    >
+                      <Plus size={18} /> <span className="hidden sm:inline">Add</span>
+                    </button>
                   </div>
                 </div>
-              </div>              <div className="w-full lg:w-auto flex items-center gap-3">
-                <div className="w-24">
-                   <span className="text-xs text-slate-500 mb-1.5 block">Quantity</span>
-                   <input 
-                    type="number" min="0" 
-                    value={newVariant.stock}
-                    onChange={e => setNewVariant(p => ({...p, stock: e.target.value}))}
-                    className={inputClass}
+                {formErrors.variants && <p className="text-red-500 text-xs mt-2 font-medium">{formErrors.variants}</p>}
+              </div>
+
+              {/* Active Variants List */}
+              <div className="mt-6">
+                <div className="flex justify-between items-end mb-2 px-1">
+                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Variants</h4>
+                   <span className="text-xs text-slate-400">{form.variants.length} items</span>
+                </div>
+                <div className="space-y-2">
+                  <AnimatePresence mode='popLayout'>
+                    {form.variants.map((v, idx) => (
+                      <motion.div 
+                        layout
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        key={`${v.hexCode}-${idx}`} 
+                        className="flex items-center justify-between p-3 border border-slate-100 rounded-lg bg-white shadow-sm group hover:border-slate-200 transition-colors"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full border border-slate-200 shadow-sm flex items-center justify-center relative overflow-hidden bg-slate-50">
+                             <div className="absolute inset-0" style={{backgroundColor: v.hexCode}}></div>
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">{v.colorName}</p>
+                            <p className="text-xs font-mono text-slate-400 uppercase">{v.hexCode}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <div className="text-right">
+                             <span className="block text-xs text-slate-400">Stock</span>
+                             <span className="text-sm font-bold text-slate-700">{v.stock}</span>
+                          </div>
+                          <button onClick={() => handleRemoveVariant(idx)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
+                            <Trash2 size={18}/>
+                          </button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                  {form.variants.length === 0 && (
+                    <div className="text-center py-8 border-2 border-dashed border-slate-100 rounded-xl">
+                      <p className="text-sm text-slate-400">No variants added yet.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Sizes Section */}
+            <div className={cardClass}>
+              <h3 className="text-lg font-bold text-slate-800 mb-4">
+                Sizes
+              </h3>
+
+              <input
+                type="text"
+                placeholder="Type size and press Enter (e.g. S, M, XL)" 
+                className={inputClass('sizes')}
+                onKeyDown={(e) => handleAddItem(e, 'sizes')}
+              />
+              <p className="text-xs text-slate-500 mt-2">
+                Press <kbd className="bg-slate-100 px-1 rounded border border-slate-300">Enter</kbd> after typing a size to add it to the list.
+              </p>
+
+              {form.sizes.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {form.sizes.map((size, index) => (
+                    <span
+                      key={index}
+                      className="flex items-center gap-2 bg-slate-100 px-3 py-1 rounded-full text-sm"
+                    >
+                      {size}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveItem('sizes', index)}
+                        className="text-slate-400 hover:text-red-500"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* RIGHT COLUMN */}
+          <div className="space-y-6 h-fit xl:sticky xl:top-8">
+            
+            {/* Multi-Tier Pricing Card */}
+            <div className={cardClass}>
+              <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><IndianRupee size={20}/></div>
+                Pricing Tiers
+              </h3>
+              <div className="space-y-5">
+                {/* Retail Price */}
+                <div>
+                  <label className={labelClass}>Retail Price (₹) <span className="text-red-500">*</span></label>
+                  <input 
+                    name="price" 
+                    type="number" 
+                    value={form.price} 
+                    onChange={handleChange} 
+                    className={`${inputClass('price')} text-lg font-semibold`} 
+                    placeholder="0.00" 
+                  />
+                  {formErrors.price && <p className="text-red-500 text-xs mt-1">{formErrors.price}</p>}
+                  <p className="text-xs text-slate-400 mt-1.5">Customer-facing price</p>
+                </div>
+
+                {/* Wholesale Price */}
+                <div className="pt-4 border-t border-slate-100">
+                  <label className={labelClass}>
+                    <div className="flex items-center gap-2">
+                      <TrendingDown size={14} className="text-indigo-500" />
+                      Wholesale Price (₹)
+                    </div>
+                  </label>
+                  <input 
+                    name="wholesalePrice" 
+                    type="number" 
+                    value={form.wholesalePrice} 
+                    onChange={handleChange} 
+                    className={inputClass('wholesalePrice')} 
+                    placeholder="0.00" 
+                  />
+                  <p className="text-xs text-slate-400 mt-1.5">B2B/Reseller pricing</p>
+
+                  {/* Margin Display */}
+                  {form.price && form.wholesalePrice && (
+                    <div className="mt-3 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-600 font-medium">Margin</span>
+                        <span className="font-bold text-indigo-700">
+                          ₹{marginAmount.toLocaleString()} ({marginPercent}%)
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Discount */}
+                <div className="pt-4 border-t border-slate-100">
+                  <div className="flex justify-between items-center mb-2">
+                      <label className={labelClass}>Discount</label>
+                      <span className="text-xs font-bold text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full">
+                        {form.discountPercentage}% OFF
+                      </span>
+                  </div>
+                  <div className="relative">
+                    <input 
+                      name="discountPercentage" 
+                      type="number" 
+                      min="0" 
+                      max="100" 
+                      value={form.discountPercentage} 
+                      onChange={handleChange} 
+                      className={`${inputClass('discountPercentage')} pr-10`} 
+                    />
+                    <Percent size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
+                </div>
+
+                {/* Final Price Display */}
+                {form.price && (
+                   <div className="bg-slate-50 rounded-lg p-3 flex justify-between items-center border border-slate-100">
+                      <span className="text-xs text-slate-500 font-medium uppercase">Customer Pays</span>
+                      <span className="text-lg font-bold text-emerald-600">
+                        ₹{Math.round(form.price * (1 - form.discountPercentage/100)).toLocaleString()}
+                      </span>
+                   </div>
+                )}
+              </div>
+            </div>
+
+            {/* Shipping & Tax Card */}
+            <div className={cardClass}>
+              <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                  <Truck size={20}/>
+                </div>
+                Logistics & Tax
+              </h3>
+
+              <div className="space-y-6">
+                {/* RETAIL */}
+                <div className="border border-slate-200 rounded-xl p-4">
+                  <p className="text-sm font-bold text-slate-700 mb-3">Retail (Customers)</p>
+                  <label className={labelClass}>Shipping Cost (₹)</label>
+                  <input
+                    name="retailShippingCost"
+                    type="number"
+                    min="0"
+                    value={form.retailShippingCost}
+                    onChange={handleChange}
+                    className={inputClass('retailShippingCost')}
+                  />
+                  <label className={`${labelClass} mt-4`}>GST (%)</label>
+                  <input
+                    name="retailTaxPercentage"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={form.retailTaxPercentage}
+                    onChange={handleChange}
+                    className={inputClass('retailTaxPercentage')}
                   />
                 </div>
+
+                {/* WHOLESALE */}
+                <div className="border border-indigo-200 bg-indigo-50/40 rounded-xl p-4">
+                  <p className="text-sm font-bold text-indigo-700 mb-3">Wholesale (Resellers)</p>
+                  <label className={labelClass}>Shipping Cost (₹)</label>
+                  <input
+                    name="wholesaleShippingCost"
+                    type="number"
+                    min="0"
+                    value={form.wholesaleShippingCost}
+                    onChange={handleChange}
+                    className={inputClass('wholesaleShippingCost')}
+                  />
+                  <label className={`${labelClass} mt-4`}>GST (%)</label>
+                  <input
+                    name="wholesaleTaxPercentage"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={form.wholesaleTaxPercentage}
+                    onChange={handleChange}
+                    className={inputClass('wholesaleTaxPercentage')}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Promotions */}
+            <div className={`${cardClass} bg-gradient-to-br from-indigo-50 to-white border-indigo-100`}>
+              <div className="text-center">
+                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white text-indigo-600 shadow-sm mb-3">
+                   <Ticket size={24}/>
+                </div>
+                <h3 className="text-lg font-bold text-slate-800 mb-1">Coupon Codes</h3>
+                <p className="text-xs text-slate-500 mb-4 px-2">Manage discounts and seasonal offers for this product.</p>
                 <button 
-                  onClick={handleAddVariant} 
-                  type="button" 
-                  className="h-[42px] px-4 bg-slate-900 text-white rounded-lg hover:bg-slate-800 hover:shadow-lg flex items-center gap-2 transition-all active:scale-95"
+                  onClick={()=>setShowCouponManager(true)} 
+                  className="w-full py-2.5 bg-white text-indigo-600 border border-indigo-200 rounded-xl text-sm font-semibold hover:bg-indigo-50 hover:border-indigo-300 transition-all shadow-sm"
                 >
-                  <Plus size={18} /> <span className="hidden sm:inline">Add</span>
+                  Manage Coupons
                 </button>
               </div>
             </div>
-          </div>          {/* Added Variants List */}
-          <div className="mt-6">
-            <div className="flex justify-between items-end mb-2 px-1">
-               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Variants</h4>
-               <span className="text-xs text-slate-400">{form.variants.length} items</span>
-            </div>
-            <div className="space-y-2">
-              <AnimatePresence mode='popLayout'>
-                {form.variants.map((v, idx) => (
-                  <motion.div 
-                    layout
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    key={`${v.hexCode}-${idx}`} 
-                    className="flex items-center justify-between p-3 border border-slate-100 rounded-lg bg-white shadow-sm group hover:border-slate-200 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full border border-slate-200 shadow-sm flex items-center justify-center relative overflow-hidden bg-slate-50">
-                         <div className="absolute inset-0" style={{backgroundColor: v.hexCode}}></div>
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-800">{v.colorName}</p>
-                        <p className="text-xs font-mono text-slate-400 uppercase">{v.hexCode}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-6">
-                      <div className="text-right">
-                         <span className="block text-xs text-slate-400">Stock</span>
-                         <span className="text-sm font-bold text-slate-700">{v.stock}</span>
-                      </div>
-                      <button onClick={() => handleRemoveVariant(idx)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
-                        <Trash2 size={18}/>
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-              {form.variants.length === 0 && (
-                <div className="text-center py-8 border-2 border-dashed border-slate-100 rounded-xl">
-                  <p className="text-sm text-slate-400">No variants added yet.</p>
-                </div>
-              )}
-            </div>
           </div>
-        </div>        
-        {/* Sizes Section - Update this specific block in your AdminProductForm */}
-<div className={cardClass}>
-  <h3 className="text-lg font-bold text-slate-800 mb-4">
-    Sizes
-  </h3>
 
-  <input
-    type="text"
-    placeholder="Type size and press Enter (e.g. S, M, XL)" 
-    className={inputClass}
-    onKeyDown={(e) => handleAddItem(e, 'sizes')}
-  />
-  <p className="text-xs text-slate-500 mt-2">
-    Press <kbd className="bg-slate-100 px-1 rounded border border-slate-300">Enter</kbd> after typing a size to add it to the list.
-  </p>
-
-  {form.sizes.length > 0 && (
-    <div className="flex flex-wrap gap-2 mt-3">
-      {form.sizes.map((size, index) => (
-        <span
-          key={index}
-          className="flex items-center gap-2 bg-slate-100 px-3 py-1 rounded-full text-sm"
-        >
-          {size}
-          <button
-            type="button"
-            onClick={() => handleRemoveItem('sizes', index)}
-            className="text-slate-400 hover:text-red-500"
-          >
-            ✕
-          </button>
-        </span>
-      ))}
-    </div>
-  )}
-</div>
-      </div>      {/* RIGHT COLUMN */}
-      <div className="space-y-6 h-fit xl:sticky xl:top-8">        {/* ✅ UPDATED: Multi-Tier Pricing Card */}
-        <div className={cardClass}>
-          <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><IndianRupee size={20}/></div>
-            Pricing Tiers
-          </h3>
-          <div className="space-y-5">
-            {/* Retail Price */}
-            <div>
-              <label className={labelClass}>Retail Price (₹) <span className="text-red-500">*</span></label>
-              <input 
-                name="price" 
-                type="number" 
-                value={form.price} 
-                onChange={handleChange} 
-                className={`${inputClass} text-lg font-semibold`} 
-                placeholder="0.00" 
-              />
-              <p className="text-xs text-slate-400 mt-1.5">Customer-facing price</p>
-            </div>            {/* ✅ NEW: Wholesale Price */}
-            <div className="pt-4 border-t border-slate-100">
-              <label className={labelClass}>
-                <div className="flex items-center gap-2">
-                  <TrendingDown size={14} className="text-indigo-500" />
-                  Wholesale Price (₹)
-                </div>
-              </label>
-              <input 
-                name="wholesalePrice" 
-                type="number" 
-                value={form.wholesalePrice} 
-                onChange={handleChange} 
-                className={inputClass} 
-                placeholder="0.00" 
-              />
-              <p className="text-xs text-slate-400 mt-1.5">B2B/Reseller pricing</p>              {/* Margin Display */}
-              {form.price && form.wholesalePrice && (
-                <div className="mt-3 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-600 font-medium">Margin</span>
-                    <span className="font-bold text-indigo-700">
-                      ₹{marginAmount.toLocaleString()} ({marginPercent}%)
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>            {/* Discount */}
-            <div className="pt-4 border-t border-slate-100">
-              <div className="flex justify-between items-center mb-2">
-                 <label className={labelClass}>Discount</label>
-                 <span className="text-xs font-bold text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full">
-                   {form.discountPercentage}% OFF
-                 </span>
-              </div>
-              <div className="relative">
-                <input 
-                  name="discountPercentage" 
-                  type="number" 
-                  min="0" 
-                  max="100" 
-                  value={form.discountPercentage} 
-                  onChange={handleChange} 
-                  className={`${inputClass} pr-10`} 
-                />
-                <Percent size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
-              </div>
-            </div>            {/* Final Price Display */}
-            {form.price && (
-               <div className="bg-slate-50 rounded-lg p-3 flex justify-between items-center border border-slate-100">
-                  <span className="text-xs text-slate-500 font-medium uppercase">Customer Pays</span>
-                  <span className="text-lg font-bold text-emerald-600">
-                    ₹{Math.round(form.price * (1 - form.discountPercentage/100)).toLocaleString()}
-                  </span>
-               </div>
-            )}
-          </div>
-        </div>        {/* ✅ NEW: Shipping & Tax Card */}
-        <div className={cardClass}>
-  <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
-    <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-      <Truck size={20}/>
-    </div>
-    Logistics & Tax
-  </h3>
-
-  <div className="space-y-6">
-
-    {/* RETAIL */}
-    <div className="border border-slate-200 rounded-xl p-4">
-      <p className="text-sm font-bold text-slate-700 mb-3">Retail (Customers)</p>
-
-      <label className={labelClass}>Shipping Cost (₹)</label>
-      <input
-        name="retailShippingCost"
-        type="number"
-        min="0"
-        value={form.retailShippingCost}
-        onChange={handleChange}
-        className={inputClass}
-      />
-
-      <label className={`${labelClass} mt-4`}>GST (%)</label>
-      <input
-        name="retailTaxPercentage"
-        type="number"
-        min="0"
-        max="100"
-        value={form.retailTaxPercentage}
-        onChange={handleChange}
-        className={inputClass}
-      />
-    </div>
-
-    {/* WHOLESALE */}
-    <div className="border border-indigo-200 bg-indigo-50/40 rounded-xl p-4">
-      <p className="text-sm font-bold text-indigo-700 mb-3">Wholesale (Resellers)</p>
-
-      <label className={labelClass}>Shipping Cost (₹)</label>
-      <input
-        name="wholesaleShippingCost"
-        type="number"
-        min="0"
-        value={form.wholesaleShippingCost}
-        onChange={handleChange}
-        className={inputClass}
-      />
-
-      <label className={`${labelClass} mt-4`}>GST (%)</label>
-      <input
-        name="wholesaleTaxPercentage"
-        type="number"
-        min="0"
-        max="100"
-        value={form.wholesaleTaxPercentage}
-        onChange={handleChange}
-        className={inputClass}
-      />
-    </div>
-
-  </div>
-</div>
-        {/* Promotions */}
-        <div className={`${cardClass} bg-gradient-to-br from-indigo-50 to-white border-indigo-100`}>
-          <div className="text-center">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white text-indigo-600 shadow-sm mb-3">
-               <Ticket size={24}/>
-            </div>
-            <h3 className="text-lg font-bold text-slate-800 mb-1">Coupon Codes</h3>
-            <p className="text-xs text-slate-500 mb-4 px-2">Manage discounts and seasonal offers for this product.</p>
-            <button 
-              onClick={()=>setShowCouponManager(true)} 
-              className="w-full py-2.5 bg-white text-indigo-600 border border-indigo-200 rounded-xl text-sm font-semibold hover:bg-indigo-50 hover:border-indigo-300 transition-all shadow-sm"
-            >
-              Manage Coupons
-            </button>
-          </div>
         </div>
       </div>
     </div>
-  </div>
-</div>
-);
-};export default AdminProductForm;
+  );
+};
+
+export default AdminProductForm;
