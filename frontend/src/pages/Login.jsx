@@ -38,11 +38,18 @@ const Login = () => {
 
       // --- Smart Redirect Logic ---
       const role = result.user?.role
-      const from = location.state?.from?.pathname
+      
+      // ✅ FIX: Improved redirect logic to handle complex state objects
+      // Checks location.state.from (which can be an object or string)
+      const fromPath = location.state?.from?.pathname || location.state?.from || null
+      const appliedCoupon = location.state?.appliedCoupon || null
 
-      // 1. If user was redirected from a protected page, send them back there
-      if (from) {
-        navigate(from, { replace: true })
+      // 1. If user was redirected from a protected page (like Checkout), send them back
+      if (fromPath) {
+        navigate(fromPath, { 
+          replace: true, 
+          state: { appliedCoupon } // Pass back any coupon they were using
+        })
         return
       }
 
@@ -100,7 +107,6 @@ const Login = () => {
           </AnimatePresence>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Email Field */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 pl-1" htmlFor="email">
                 Email Address
@@ -122,7 +128,6 @@ const Login = () => {
               </div>
             </div>
 
-            {/* Password Field */}
             <div className="space-y-1.5">
               <div className="flex justify-between items-center pl-1">
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-500" htmlFor="password">
@@ -156,11 +161,10 @@ const Login = () => {
               </div>
             </div>
 
-            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center py-4 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium transition-all shadow-lg shadow-slate-900/20 hover:shadow-xl hover:translate-y-[-1px] disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
+              className="w-full flex items-center justify-center py-4 px-6 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium transition-all shadow-lg shadow-slate-900/20 hover:shadow-xl hover:translate-y-[-1px] disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <Loader2 className="animate-spin w-5 h-5" />
@@ -173,7 +177,6 @@ const Login = () => {
           </form>
         </div>
 
-        {/* Updated Footer with Reseller Link */}
         <div className="bg-slate-50 p-6 text-center border-t border-slate-100 space-y-4">
           <p className="text-slate-600 text-sm">
             Don't have an account yet?{' '}
@@ -182,14 +185,12 @@ const Login = () => {
             </Link>
           </p>
 
-          {/* Business Separator */}
           <div className="relative flex items-center py-1">
             <div className="flex-grow border-t border-slate-200"></div>
             <span className="flex-shrink-0 mx-4 text-slate-400 text-[10px] font-bold uppercase tracking-widest">Business</span>
             <div className="flex-grow border-t border-slate-200"></div>
           </div>
 
-          {/* Reseller Registration Link */}
           <Link 
             to="/reseller/register" 
             className="flex items-center justify-center gap-2 text-sm font-medium text-slate-700 hover:text-rose-700 transition-colors group p-2 rounded-lg hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-100"

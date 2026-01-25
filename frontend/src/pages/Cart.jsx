@@ -1,9 +1,9 @@
 import { useState, useEffect, useContext } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Trash2, Plus, Minus, ShoppingBag, ArrowRight, ShieldCheck, Lock, AlertCircle, Loader2, ArrowLeft } from 'lucide-react'
-import { cartApi } from '../services/cart'
+import { Trash2, Plus, Minus, ShoppingBag, ArrowRight, Loader2, ArrowLeft } from 'lucide-react'
 import { AuthContext } from '../context/AuthContext'
+import { CartContext } from '../context/CartContext' // ✅ Important: Added this
 import CartSummary from '../components/CartSummary' 
 import toast from 'react-hot-toast'
 import { getImageUrl } from '../utils/getImageUrl'
@@ -12,61 +12,36 @@ const Cart = () => {
   const navigate = useNavigate()
   const { user } = useContext(AuthContext)
   
-  const [cart, setCart] = useState(null)
-  const [loading, setLoading] = useState(true)
+  // ✅ FIX: Use CartContext to get global cart state and methods
+  // This ensures guest items from localStorage are visible
+  const { cart, loading, updateQuantity, removeFromCart, clearCart } = useContext(CartContext)
   
   const [updatingItems, setUpdatingItems] = useState(new Set())
   const [removingId, setRemovingId] = useState(null)
   const [appliedCoupon, setAppliedCoupon] = useState(null)
 
   useEffect(() => {
-    // If logged in as a reseller, they use a different cart flow
     if (user && user.role === 'reseller') {
       navigate('/reseller/cart', { replace: true })
       return
     }
-    // Fetch cart for both guests and logged-in users
-    fetchCart()
   }, [user, navigate])
 
-  const fetchCart = async () => {
-    try {
-      const data = await cartApi.getCart()
-      setCart(data.cart)
-      if (data.cart?.appliedCoupon) {
-        setAppliedCoupon(data.cart.appliedCoupon)
-      }
-    } catch (error) {
-      console.error('Error fetching cart:', error)
-      // We don't toast error for guests if it's just a 401/unauthorized
-      if (user) toast.error("Could not load cart")
-    } finally {
-      setLoading(false)
-    }
-  }
+  // ✅ FIX: Removed local fetchCart and local useEffect that was checking for !user
 
   const handleQuantityChange = async (item, newQuantity) => {
     if (newQuantity < 1) return
     if (updatingItems.has(item._id)) return;
 
-    const oldCart = JSON.parse(JSON.stringify(cart))
-    
-    setCart(prev => ({
-      ...prev,
-      items: prev.items.map(i => i._id === item._id ? { ...i, quantity: newQuantity } : i)
-    }))
     setUpdatingItems(prev => new Set(prev).add(item._id))
 
     try {
-      const data = await cartApi.updateCartItem(item._id, newQuantity)
-      if (data.success) {
-        setCart(data.cart)
-        if (appliedCoupon) await revalidateCoupon(data.cart)
-      }
+      // ✅ Use context method instead of direct API call
+      await updateQuantity(item._id, newQuantity)
+      if (appliedCoupon) await revalidateCoupon(cart)
     } catch (error) {
       console.error('Update failed:', error)
-      setCart(oldCart)
-      toast.error(error.response?.data?.message || "Could not update quantity")
+      toast.error("Could not update quantity")
     } finally {
       setUpdatingItems(prev => {
         const next = new Set(prev)
@@ -81,19 +56,16 @@ const Cart = () => {
     setRemovingId(itemId)
 
     try {
-      const data = await cartApi.removeFromCart(itemId)
-      if (data.success) {
-        setCart(data.cart)
-        toast.success("Item removed")
-        if (appliedCoupon && data.cart.items.length > 0) {
-          await revalidateCoupon(data.cart)
-        } else if (data.cart.items.length === 0) {
-          setAppliedCoupon(null)
-        }
+      // ✅ Use context method instead of direct API call
+      await removeFromCart(itemId)
+      if (appliedCoupon && cart.items.length > 0) {
+        await revalidateCoupon(cart)
+      } else if (cart.items.length === 0) {
+        setAppliedCoupon(null)
       }
     } catch (error) {
       console.error('Remove error:', error)
-      toast.error(error.response?.data?.message || "Failed to remove item")
+      toast.error("Failed to remove item")
     } finally {
       setRemovingId(null)
     }
@@ -102,18 +74,19 @@ const Cart = () => {
   const handleClearCart = async () => {
     if (window.confirm('Are you sure you want to remove all items?')) {
       try {
-        await cartApi.clearCart()
-        setCart({ ...cart, items: [], totalAmount: 0, totalItems: 0, subtotal: 0, totalTax: 0, totalShipping: 0 })
+        await clearCart()
         setAppliedCoupon(null)
-        toast.success("Cart cleared")
       } catch (error) {
         toast.error("Failed to clear cart")
       }
     }
   }
 
+  // Coupon logic remains the same (Retail only)
   const handleCouponCheck = async (code) => {
+    // Note: If you want coupons for guests, ensure your cartApi doesn't require Auth for validation
     try {
+      // This still uses cartApi directly as coupons aren't usually in LocalStorage
       const res = await cartApi.validateCoupon({
         code, 
         cartTotal: cart.totalAmount, 
@@ -152,10 +125,10 @@ const Cart = () => {
   }
 
   const handleCheckout = () => {
+    // ✅ Guest protection: Only redirect to login when proceeding to checkout
     if (!user) {
       toast("Please login to proceed to checkout", { icon: '🔐' });
-      // Pass the checkout path to redirect back after login
-      navigate('/login', { state: { from: '/checkout', appliedCoupon } })
+      navigate('/login', { state: { from: { pathname: '/checkout' }, appliedCoupon } })
       return
     }
     navigate('/checkout', { state: { appliedCoupon } })
@@ -180,6 +153,7 @@ const Cart = () => {
     )
   }
 
+  // ✅ Now this properly checks the Context cart, which includes guest items
   if (!cart || !cart.items || cart.items.length === 0) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50 p-4">
