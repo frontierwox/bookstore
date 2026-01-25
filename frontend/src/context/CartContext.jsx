@@ -1,5 +1,4 @@
-// context/CartContext.jsx
-import React, { createContext, useState, useCallback, useEffect, useContext } from 'react';
+import React, { createContext, useState, useCallback, useEffect, useContext, useRef } from 'react';
 import { cartApi } from '../services/cart';
 import { AuthContext } from './AuthContext';
 import toast from 'react-hot-toast';
@@ -8,9 +7,9 @@ export const CartContext = createContext();
 
 export const CartProvider = ({ children }) => {
   const { user } = useContext(AuthContext);
-  
   const [cart, setCart] = useState({ items: [], totalAmount: 0, totalItems: 0 });
   const [loading, setLoading] = useState(false);
+  const isFirstRender = useRef(true);
 
   // Helper: Calculate Totals for Guest Cart
   const calculateTotals = (items) => {
@@ -27,19 +26,47 @@ export const CartProvider = ({ children }) => {
     };
   };
 
+  // Sync Guest Cart to Server after Login
+  const syncGuestCart = async () => {
+    const saved = localStorage.getItem('guestCart');
+    if (!saved) return;
+
+    try {
+      const guestData = JSON.parse(saved);
+      if (guestData.items?.length > 0) {
+        // Loop through guest items and add to user database
+        for (const item of guestData.items) {
+          const payload = {
+            product: item.product._id,
+            quantity: item.quantity,
+            selectedSize: item.selectedSize,
+            selectedColor: item.selectedColor
+          };
+          await cartApi.addToCart(payload, item.quantity);
+        }
+        localStorage.removeItem('guestCart');
+      }
+    } catch (error) {
+      console.error('Failed to sync guest cart:', error);
+    }
+  };
+
   // Fetch Cart
   const fetchCart = useCallback(async () => {
+    setLoading(true);
     if (user) {
       try {
-        setLoading(true);
+        // If they just logged in, sync their guest items first
+        if (localStorage.getItem('guestCart')) {
+          await syncGuestCart();
+        }
         const data = await cartApi.getCart();
         setCart(data.cart || { items: [], totalAmount: 0, totalItems: 0 });
       } catch (error) {
-        console.error('Failed to fetch cart', error);
-      } finally {
-        setLoading(false);
+        console.error('Failed to fetch user cart', error);
       }
     } else {
+      // Load from LocalStorage for guests
       const saved = localStorage.getItem('guestCart');
       if (saved) {
         setCart(JSON.parse(saved));
@@ -47,22 +74,23 @@ export const CartProvider = ({ children }) => {
         setCart({ items: [], totalAmount: 0, totalItems: 0 });
       }
     }
+    setLoading(false);
   }, [user]);
 
   useEffect(() => {
     fetchCart();
   }, [fetchCart]);
 
-  // Persist Guest Cart
+  // Persist Guest Cart to LocalStorage
   useEffect(() => {
-    if (!user) {
+    if (!user && !isFirstRender.current) {
       localStorage.setItem('guestCart', JSON.stringify(cart));
     }
+    isFirstRender.current = false;
   }, [cart, user]);
 
-  // ✅ FIX: Add to Cart - simplified payload structure
+  // Add to Cart
   const addToCart = useCallback(async (productData, quantity = 1) => {
-    // Handle both direct calls and calls with embedded product object
     const productId = productData.product || productData._id;
     const size = productData.selectedSize || productData.sizes?.[0] || 'Free Size';
     const color = productData.selectedColor || productData.colors?.[0] || 'Standard';
@@ -72,25 +100,22 @@ export const CartProvider = ({ children }) => {
       ? Number(productData.wholesalePrice) 
       : Number(productData.price);
 
-    // ✅ Correct payload structure matching backend expectations
-    const payload = {
-      product: productId,
-      quantity,
-      selectedSize: size,
-      selectedColor: color
-    };
-
     if (user) {
       try {
+        const payload = {
+          product: productId,
+          quantity,
+          selectedSize: size,
+          selectedColor: color
+        };
         const data = await cartApi.addToCart(payload, quantity);
         setCart(data.cart);
         toast.success(isReseller ? 'Added to wholesale order' : 'Added to cart');
       } catch (error) {
-        console.error('Add to cart error:', error);
         toast.error(error.response?.data?.message || 'Failed to add item');
       }
     } else {
-      // Guest cart logic
+      // Guest logic: Update Local State
       setCart(prev => {
         const existingItemIndex = prev.items.findIndex(item => 
           item.product._id === productId && 
@@ -102,10 +127,9 @@ export const CartProvider = ({ children }) => {
         
         if (existingItemIndex > -1) {
           newItems[existingItemIndex].quantity += quantity;
-          newItems[existingItemIndex].price = priceToUse;
         } else {
           newItems.push({
-            _id: Date.now().toString(),
+            _id: Date.now().toString(), // Temp ID for React keys
             product: { 
               ...productData, 
               _id: productId 
@@ -118,10 +142,9 @@ export const CartProvider = ({ children }) => {
             taxAmount: 0
           });
         }
-        
         return calculateTotals(newItems);
       });
-      toast.success('Added to cart');
+      toast.success('Added to bag');
     }
   }, [user]);
 
@@ -134,15 +157,12 @@ export const CartProvider = ({ children }) => {
         const data = await cartApi.updateCartItem(cartItemId, quantity);
         setCart(data.cart);
       } catch (error) {
-        console.error(error);
         toast.error('Failed to update quantity');
       }
     } else {
       setCart(prev => {
         const newItems = prev.items.map(item => 
-          (item._id === cartItemId || item.product._id === cartItemId) 
-            ? { ...item, quantity } 
-            : item
+          item._id === cartItemId ? { ...item, quantity } : item
         );
         return calculateTotals(newItems);
       });
@@ -157,14 +177,11 @@ export const CartProvider = ({ children }) => {
         setCart(data.cart);
         toast.success('Item removed');
       } catch (error) {
-        console.error(error);
         toast.error('Failed to remove item');
       }
     } else {
       setCart(prev => {
-        const newItems = prev.items.filter(item => 
-          item._id !== cartItemId && item.product._id !== cartItemId
-        );
+        const newItems = prev.items.filter(item => item._id !== cartItemId);
         return calculateTotals(newItems);
       });
       toast.success('Item removed');
@@ -182,6 +199,7 @@ export const CartProvider = ({ children }) => {
       }
     } else {
       setCart({ items: [], totalAmount: 0, totalItems: 0 });
+      localStorage.removeItem('guestCart');
     }
   }, [user]);
 
@@ -192,7 +210,7 @@ export const CartProvider = ({ children }) => {
     updateQuantity,
     clearCart,
     fetchCart, 
-    itemCount: cart.totalItems || 0,
+    itemCount: cart?.totalItems || 0,
     loading
   };
 
