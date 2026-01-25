@@ -99,29 +99,28 @@ const ProductDetails = () => {
   }
 
   const handleAddToCart = async () => {
-  if (!user) return navigate('/login', { state: { from: `/products/${id}` } })
+  // REMOVE: The user check and navigate redirect
   
   const currentStock = selectedVariant ? selectedVariant.stock : product.stock;
-  if (currentStock <= 0) return
+  if (currentStock <= 0) return;
 
-  setAddingToCart(true)
+  setAddingToCart(true);
   try {
-    // ✅ FIX: Pass the complete product object with selections
-    // The Context will extract the necessary fields
     await addToCart({
-      ...product, // Full product object
+      ...product,
       selectedSize,
       selectedColor: selectedVariant?.colorName || ''
-    }, quantity)
+    }, quantity);
 
-    // Success toast is handled by Context
-    setToast({ message: 'Added to cart!', type: 'success' })
+    setToast({ message: 'Added to cart!', type: 'success' });
   } catch (error) {
-    setToast({ message: 'Could not add to cart', type: 'error' })
+    // If your backend requires a user, the CartContext should handle 
+    // saving to LocalStorage for guests instead.
+    setToast({ message: 'Could not add to cart', type: 'error' });
   } finally {
-    setAddingToCart(false)
+    setAddingToCart(false);
   }
-}
+};
 
   // Prevent background scroll when Zoom Modal is open
   useEffect(() => {

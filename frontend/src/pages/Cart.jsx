@@ -20,15 +20,13 @@ const Cart = () => {
   const [appliedCoupon, setAppliedCoupon] = useState(null)
 
   useEffect(() => {
-    if (user) {
-      if (user.role === 'reseller') {
-        navigate('/reseller/cart', { replace: true })
-        return
-      }
-      fetchCart()
-    } else {
-      setLoading(false)
+    // If logged in as a reseller, they use a different cart flow
+    if (user && user.role === 'reseller') {
+      navigate('/reseller/cart', { replace: true })
+      return
     }
+    // Fetch cart for both guests and logged-in users
+    fetchCart()
   }, [user, navigate])
 
   const fetchCart = async () => {
@@ -40,7 +38,8 @@ const Cart = () => {
       }
     } catch (error) {
       console.error('Error fetching cart:', error)
-      toast.error("Could not load cart")
+      // We don't toast error for guests if it's just a 401/unauthorized
+      if (user) toast.error("Could not load cart")
     } finally {
       setLoading(false)
     }
@@ -59,9 +58,7 @@ const Cart = () => {
     setUpdatingItems(prev => new Set(prev).add(item._id))
 
     try {
-      // ✅ FIX: Use the cart line item _id directly
       const data = await cartApi.updateCartItem(item._id, newQuantity)
-      
       if (data.success) {
         setCart(data.cart)
         if (appliedCoupon) await revalidateCoupon(data.cart)
@@ -80,14 +77,11 @@ const Cart = () => {
   }
 
   const handleRemoveItem = async (itemId) => {
-    // ✅ FIX: itemId is already the cart line item _id from the map
     if (removingId) return;
     setRemovingId(itemId)
 
     try {
-      // ✅ Use the line item _id directly - this is the correct approach
       const data = await cartApi.removeFromCart(itemId)
-      
       if (data.success) {
         setCart(data.cart)
         toast.success("Item removed")
@@ -158,6 +152,12 @@ const Cart = () => {
   }
 
   const handleCheckout = () => {
+    if (!user) {
+      toast("Please login to proceed to checkout", { icon: '🔐' });
+      // Pass the checkout path to redirect back after login
+      navigate('/login', { state: { from: '/checkout', appliedCoupon } })
+      return
+    }
     navigate('/checkout', { state: { appliedCoupon } })
   }
 
@@ -176,21 +176,6 @@ const Cart = () => {
       <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50">
         <Loader2 className="w-10 h-10 text-rose-600 animate-spin mb-4" />
         <p className="text-slate-500 font-medium animate-pulse">Loading your bag...</p>
-      </div>
-    )
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50 p-4 text-center">
-        <div className="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mb-6">
-          <Lock className="w-10 h-10 text-rose-600" />
-        </div>
-        <h2 className="text-3xl font-serif text-slate-900 mb-3">Please Log In</h2>
-        <p className="text-slate-500 max-w-md mb-8">Sign in to view your shopping bag.</p>
-        <Link to="/login" className="px-8 py-3 bg-slate-900 text-white rounded-full hover:bg-rose-700 transition-colors shadow-lg">
-          Log In Now
-        </Link>
       </div>
     )
   }
@@ -246,7 +231,6 @@ const Cart = () => {
                 >
                   <div className="flex flex-col md:grid md:grid-cols-12 gap-4 items-center">
                     <div className="w-full md:col-span-6 flex gap-3 md:gap-4">
-                      
                       <div className="w-20 h-24 md:w-24 md:h-32 shrink-0 rounded-lg overflow-hidden bg-slate-100 relative border border-slate-100">
                         <img 
                           src={getProductImage(item)} 
@@ -269,13 +253,6 @@ const Cart = () => {
                           <div className="text-xs md:text-sm text-slate-500 mt-1.5 space-y-0.5">
                             {item.selectedSize && <p>Size: <span className="text-slate-700 font-medium">{item.selectedSize}</span></p>}
                             {item.selectedColor && <p>Color: <span className="text-slate-700 font-medium">{item.selectedColor}</span></p>}
-                            {(item.shippingAmount > 0 || item.taxAmount > 0) && (
-                              <div className="hidden md:block text-[10px] text-slate-400 mt-1">
-                                 {formatPrice(item.price)}
-                                 {item.shippingAmount > 0 && ` + Ship`}
-                                 {item.taxAmount > 0 && ` + Tax`}
-                              </div>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -298,7 +275,6 @@ const Cart = () => {
 
                     <div className="hidden md:flex md:col-span-3 flex-col justify-center items-end text-right">
                       <div className="font-medium text-lg text-slate-900">{formatPrice(item.price * item.quantity)}</div>
-                      {/* ✅ FIX: Pass item._id directly - this is the cart line item ID */}
                       <button onClick={() => handleRemoveItem(item._id)} disabled={removingId === item._id} className="flex items-center text-xs font-medium text-slate-400 hover:text-red-500 mt-3 transition-colors px-2 py-1 rounded hover:bg-red-50">
                         <Trash2 size={14} className="mr-1.5" /> Remove
                       </button>
